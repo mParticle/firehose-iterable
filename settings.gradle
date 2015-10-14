@@ -1,0 +1,2 @@
+include ':iterable-extension'
+include ':iterable-java-sdk'
