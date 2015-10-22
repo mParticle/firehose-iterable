@@ -4,16 +4,16 @@ import com.amazonaws.util.json.JSONException;
 import com.amazonaws.util.json.JSONObject;
 import com.mparticle.iterable.*;
 import com.mparticle.sdk.MessageProcessor;
-import com.mparticle.sdk.model.audienceprocessing.AudienceMembershipChange;
+import com.mparticle.sdk.model.audienceprocessing.Audience;
 import com.mparticle.sdk.model.audienceprocessing.AudienceMembershipChangeRequest;
 import com.mparticle.sdk.model.audienceprocessing.AudienceMembershipChangeResponse;
+import com.mparticle.sdk.model.audienceprocessing.UserProfile;
 import com.mparticle.sdk.model.eventprocessing.*;
 import com.mparticle.sdk.model.registration.*;
 import retrofit.Response;
 
 import java.io.IOException;
 import java.util.*;
-import java.util.stream.Collectors;
 
 public class IterableExtension extends MessageProcessor {
 
@@ -98,25 +98,31 @@ public class IterableExtension extends MessageProcessor {
     @Override
     public ModuleRegistrationResponse processRegistrationRequest(ModuleRegistrationRequest request) {
         ModuleRegistrationResponse response = new ModuleRegistrationResponse(NAME, "1.0");
-        Permissions permissions = new Permissions();
-        List<UserIdentityPermission> userIds = Arrays.asList(
-                new UserIdentityPermission(UserIdentity.Type.EMAIL, Identity.Encoding.RAW),
-                new UserIdentityPermission(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW)
-        );
 
-        permissions.setUserIdentities(userIds);
+        Permissions permissions = new Permissions();
+        permissions.setUserIdentities(
+                Arrays.asList(
+                        new UserIdentityPermission(UserIdentity.Type.EMAIL, Identity.Encoding.RAW),
+                        new UserIdentityPermission(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW)
+                )
+        );
         response.setPermissions(permissions);
 
         // Register a mobile event stream listener
-        EventProcessingRegistration eventProcessingRegistration = new EventProcessingRegistration();
-        eventProcessingRegistration.setDescription("Iterable Event Processor");
+        EventProcessingRegistration eventProcessingRegistration = new EventProcessingRegistration()
+                .setDescription("Iterable Event Processor")
+                .setSupportedRuntimeEnvironments(
+                        Arrays.asList(
+                                RuntimeEnvironment.Type.ANDROID,
+                                RuntimeEnvironment.Type.IOS)
+                );
 
         // Add account settings that should be provided by the subscribers, such as an API key
         List<Setting> accountSettings = new ArrayList<>();
-        TextSetting apiKey = new TextSetting(SETTING_API_KEY, "API Key");
-        apiKey.setIsRequired(true);
-        accountSettings.add(apiKey);
-
+        accountSettings.add(
+                new TextSetting(SETTING_API_KEY, "API Key")
+                        .setIsRequired(true)
+        );
         eventProcessingRegistration.setAccountSettings(accountSettings);
 
         // Specify supported event types
@@ -196,7 +202,7 @@ public class IterableExtension extends MessageProcessor {
                     throw new IOException("Error sending push-open to Iterable: HTTP " + response.code());
                 }
             }
-        }catch (JSONException jse) {
+        } catch (JSONException jse) {
             throw new IOException(jse);
         }
     }
@@ -206,36 +212,86 @@ public class IterableExtension extends MessageProcessor {
         Map<String, String> settings = request.getAccount().getAccountSettings();
         String apiKey = settings.get(SETTING_API_KEY);
         IterableService audienceIterableService = IterableService.newInstance(apiKey);
-        List<AudienceMembershipChange> membershipChanges = request.getMembershipChanges();
-
-        for (int i = 0; i < membershipChanges.size(); i++) {
-            AudienceMembershipChange change = membershipChanges.get(i);
-            Map<String, String> audienceSettings = change.getAudienceSubscriptionSettings();
-            int listId = Integer.parseInt(audienceSettings.get(SETTING_LIST_ID));
-
-            SubscribeRequest subscribeRequest = new SubscribeRequest();
-            subscribeRequest.listId = listId;
-            subscribeRequest.subscribers = change.getAddedUserIdentities().stream()
-                    .filter(t -> t.getType().equals(UserIdentity.Type.EMAIL))
-                    .map(identity -> {
+        HashMap<Integer, List<ApiUser>> additions = new HashMap<>();
+        HashMap<Integer, List<Unsubscriber>> removals = new HashMap<>();
+        for (UserProfile profile : request.getUserProfiles()) {
+            String email = null, userId = null;
+            List<UserIdentity> identities = profile.getUserIdentities();
+            for (UserIdentity identity : identities) {
+                if (identity.getType().equals(UserIdentity.Type.EMAIL)) {
+                    email = identity.getValue();
+                } else if (identity.getType().equals(UserIdentity.Type.CUSTOMER)) {
+                    userId = identity.getValue();
+                }
+            }
+            if (email != null) {
+                if (profile.getAddedAudiences() != null) {
+                    for (Audience audience : profile.getAddedAudiences()) {
+                        Map<String, String> audienceSettings = audience.getAudienceSubscriptionSettings();
+                        int listId = Integer.parseInt(audienceSettings.get(SETTING_LIST_ID));
                         ApiUser user = new ApiUser();
-                        user.email = identity.getValue();
-                        return user;
-                    }).collect(Collectors.toList());
-            audienceIterableService.listSubscribe(subscribeRequest).execute();
-
-            UnsubscribeRequest unsubscribeRequest = new UnsubscribeRequest();
-            unsubscribeRequest.listId = listId;
-            unsubscribeRequest.subscribers = change.getRemovedUserIdentities().stream()
-                    .filter(t -> t.getType().equals(UserIdentity.Type.EMAIL))
-                    .map(identity -> {
-                        Unsubscriber user = new Unsubscriber();
-                        user.email = identity.getValue();
-                        return user;
-                    }).collect(Collectors.toList());
-            audienceIterableService.listUnsubscribe(unsubscribeRequest).execute();
-
+                        user.email = email;
+                        user.userId = userId;
+                        user.dataFields = profile.getUserAttributes();
+                        if (!additions.containsKey(listId)) {
+                            additions.put(listId, new LinkedList<>());
+                        }
+                        additions.get(listId).add(user);
+                    }
+                }
+                if (profile.getRemovedAudiences() != null) {
+                    for (Audience audience : profile.getRemovedAudiences()) {
+                        Map<String, String> audienceSettings = audience.getAudienceSubscriptionSettings();
+                        int listId = Integer.parseInt(audienceSettings.get(SETTING_LIST_ID));
+                        Unsubscriber unsubscriber = new Unsubscriber();
+                        unsubscriber.email = email;
+                        if (!removals.containsKey(listId)) {
+                            removals.put(listId, new LinkedList<>());
+                        }
+                        removals.get(listId).add(unsubscriber);
+                    }
+                }
+            }
         }
+
+        for (Map.Entry<Integer, List<ApiUser>> entry : additions.entrySet()) {
+            SubscribeRequest subscribeRequest = new SubscribeRequest();
+            subscribeRequest.listId = entry.getKey();
+            subscribeRequest.subscribers = entry.getValue();
+            try {
+                Response<ListResponse> response = audienceIterableService.listSubscribe(subscribeRequest).execute();
+                if (response.isSuccess()) {
+                    ListResponse listResponse = response.body();
+                    if (listResponse.failCount > 0) {
+                        throw new IOException("Iterable list subscribe had positive fail count: " + listResponse.failCount);
+                    }
+                } else if (!response.isSuccess()) {
+                    throw new IOException("Error sending list subscribe to Iterable: HTTP " + response.code());
+                }
+            } catch (Exception e) {
+                //TODO log something
+            }
+        }
+
+        for (Map.Entry<Integer, List<Unsubscriber>> entry : removals.entrySet()) {
+            UnsubscribeRequest unsubscribeRequest = new UnsubscribeRequest();
+            unsubscribeRequest.listId = entry.getKey();
+            unsubscribeRequest.subscribers = entry.getValue();
+            try {
+                Response<ListResponse> response = audienceIterableService.listUnsubscribe(unsubscribeRequest).execute();
+                if (response.isSuccess()) {
+                    ListResponse listResponse = response.body();
+                    if (listResponse.failCount > 0) {
+                        throw new IOException("Iterable list unsubscribe had positive fail count: " + listResponse.failCount);
+                    }
+                } else if (!response.isSuccess()) {
+                    throw new IOException("Error sending list unsubscribe to Iterable: HTTP " + response.code());
+                }
+            } catch (Exception e) {
+                //TODO log something
+            }
+        }
+
         //TODO does this response matter?
         return new AudienceMembershipChangeResponse();
     }
