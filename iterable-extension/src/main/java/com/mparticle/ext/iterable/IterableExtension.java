@@ -10,6 +10,7 @@ import com.mparticle.sdk.model.audienceprocessing.AudienceMembershipChangeRespon
 import com.mparticle.sdk.model.audienceprocessing.UserProfile;
 import com.mparticle.sdk.model.eventprocessing.*;
 import com.mparticle.sdk.model.registration.*;
+import org.apache.http.util.TextUtils;
 import retrofit.Response;
 
 import java.io.IOException;
@@ -20,7 +21,7 @@ public class IterableExtension extends MessageProcessor {
     public static final String NAME = "IterableExtension";
     public static final String SETTING_API_KEY = "apiKey";
     public static final String SETTING_LIST_ID = "listId";
-    private IterableService iterableService;
+    IterableService iterableService;
 
     @Override
     public EventProcessingResponse processEventProcessingRequest(EventProcessingRequest request) throws IOException {
@@ -67,23 +68,25 @@ public class IterableExtension extends MessageProcessor {
         }
     }
 
-    private void updateUser(Event.Context context) throws IOException {
+    void updateUser(Event.Context context) throws IOException {
         List<UserIdentity> identities = context.getUserIdentities();
         UserUpdateRequest userUpdateRequest = new UserUpdateRequest();
-        for (UserIdentity identity : identities) {
-            if (identity.getType().equals(UserIdentity.Type.EMAIL)) {
-                userUpdateRequest.email = identity.getValue();
-            } else if (identity.getType().equals(UserIdentity.Type.CUSTOMER)) {
-                userUpdateRequest.userId = identity.getValue();
+        if (identities != null) {
+            for (UserIdentity identity : identities) {
+                if (identity.getType().equals(UserIdentity.Type.EMAIL)) {
+                    userUpdateRequest.email = identity.getValue();
+                } else if (identity.getType().equals(UserIdentity.Type.CUSTOMER)) {
+                    userUpdateRequest.userId = identity.getValue();
+                }
             }
-        }
-        if (userUpdateRequest.email != null || userUpdateRequest.userId != null) {
-            userUpdateRequest.dataFields = context.getUserAttributes();
-            Response<IterableApiResponse> response = iterableService.userUpdate(userUpdateRequest).execute();
-            if (response.isSuccess()) {
-                IterableApiResponse apiResponse = response.body();
-                if (apiResponse != null && !apiResponse.isSuccess()) {
-                    throw new IOException(apiResponse.toString());
+            if (!TextUtils.isEmpty(userUpdateRequest.email) || !TextUtils.isEmpty(userUpdateRequest.userId)) {
+                userUpdateRequest.dataFields = context.getUserAttributes();
+                Response<IterableApiResponse> response = iterableService.userUpdate(userUpdateRequest).execute();
+                if (response.isSuccess()) {
+                    IterableApiResponse apiResponse = response.body();
+                    if (apiResponse != null && !apiResponse.isSuccess()) {
+                        throw new IOException(apiResponse.toString());
+                    }
                 }
             }
         }
@@ -178,32 +181,34 @@ public class IterableExtension extends MessageProcessor {
     public void processPushMessageReceiptEvent(PushMessageReceiptEvent event) throws IOException {
         TrackPushOpenRequest request = new TrackPushOpenRequest();
         List<UserIdentity> identities = event.getContext().getUserIdentities();
-        for (UserIdentity identity : identities) {
-            if (identity.getType().equals(UserIdentity.Type.EMAIL)) {
-                request.email = identity.getValue();
-            } else if (identity.getType().equals(UserIdentity.Type.CUSTOMER)) {
-                request.userId = identity.getValue();
-            }
-        }
-        if (request.email == null && request.userId == null) {
-            throw new IOException("Unable to process PushMessageReceiptEvent - user has no email or customer id.");
-        }
-        try {
-            JSONObject payload = new JSONObject(event.getPayload());
-            if (payload.has("itbl")) {
-                JSONObject iterableObject = payload.getJSONObject("itbl");
-                request.campaignId = iterableObject.getInt("campaignId");
-                request.templateId = iterableObject.getInt("templateId");
-                request.createdAt = (int) (event.getTimestamp() / 1000.0);
-                Response<IterableApiResponse> response = iterableService.trackPushOpen(request).execute();
-                if (response.isSuccess() && !response.body().isSuccess()) {
-                    throw new IOException(response.body().toString());
-                } else if (!response.isSuccess()) {
-                    throw new IOException("Error sending push-open to Iterable: HTTP " + response.code());
+        if (event.getPayload() != null && event.getContext().getUserIdentities() != null) {
+            for (UserIdentity identity : identities) {
+                if (identity.getType().equals(UserIdentity.Type.EMAIL)) {
+                    request.email = identity.getValue();
+                } else if (identity.getType().equals(UserIdentity.Type.CUSTOMER)) {
+                    request.userId = identity.getValue();
                 }
             }
-        } catch (JSONException jse) {
-            throw new IOException(jse);
+            if (request.email == null && request.userId == null) {
+                throw new IOException("Unable to process PushMessageReceiptEvent - user has no email or customer id.");
+            }
+            try {
+                JSONObject payload = new JSONObject(event.getPayload());
+                if (payload.has("itbl")) {
+                    JSONObject iterableObject = payload.getJSONObject("itbl");
+                    request.campaignId = iterableObject.optInt("campaignId");
+                    request.templateId = iterableObject.optInt("templateId");
+                    request.createdAt = (int) (event.getTimestamp() / 1000.0);
+                    Response<IterableApiResponse> response = iterableService.trackPushOpen(request).execute();
+                    if (response.isSuccess() && !response.body().isSuccess()) {
+                        throw new IOException(response.body().toString());
+                    } else if (!response.isSuccess()) {
+                        throw new IOException("Error sending push-open to Iterable: HTTP " + response.code());
+                    }
+                }
+            } catch (JSONException jse) {
+                throw new IOException(jse);
+            }
         }
     }
 
@@ -211,7 +216,11 @@ public class IterableExtension extends MessageProcessor {
     public AudienceMembershipChangeResponse processAudienceMembershipChangeRequest(AudienceMembershipChangeRequest request) throws IOException {
         Map<String, String> settings = request.getAccount().getAccountSettings();
         String apiKey = settings.get(SETTING_API_KEY);
-        IterableService audienceIterableService = IterableService.newInstance(apiKey);
+        IterableService service = IterableService.newInstance(apiKey);
+        return processAudienceMembershipChangeRequest(request, service);
+    }
+
+    public AudienceMembershipChangeResponse processAudienceMembershipChangeRequest(AudienceMembershipChangeRequest request, IterableService service) throws IOException{
         HashMap<Integer, List<ApiUser>> additions = new HashMap<>();
         HashMap<Integer, List<Unsubscriber>> removals = new HashMap<>();
         for (UserProfile profile : request.getUserProfiles()) {
@@ -259,7 +268,7 @@ public class IterableExtension extends MessageProcessor {
             subscribeRequest.listId = entry.getKey();
             subscribeRequest.subscribers = entry.getValue();
             try {
-                Response<ListResponse> response = audienceIterableService.listSubscribe(subscribeRequest).execute();
+                Response<ListResponse> response = service.listSubscribe(subscribeRequest).execute();
                 if (response.isSuccess()) {
                     ListResponse listResponse = response.body();
                     if (listResponse.failCount > 0) {
@@ -278,7 +287,7 @@ public class IterableExtension extends MessageProcessor {
             unsubscribeRequest.listId = entry.getKey();
             unsubscribeRequest.subscribers = entry.getValue();
             try {
-                Response<ListResponse> response = audienceIterableService.listUnsubscribe(unsubscribeRequest).execute();
+                Response<ListResponse> response = service.listUnsubscribe(unsubscribeRequest).execute();
                 if (response.isSuccess()) {
                     ListResponse listResponse = response.body();
                     if (listResponse.failCount > 0) {

@@ -1,0 +1,365 @@
+package com.mparticle.ext.iterable;
+
+import com.amazonaws.util.json.JSONObject;
+import com.mparticle.iterable.*;
+import com.mparticle.sdk.model.audienceprocessing.Audience;
+import com.mparticle.sdk.model.audienceprocessing.AudienceMembershipChangeRequest;
+import com.mparticle.sdk.model.audienceprocessing.UserProfile;
+import com.mparticle.sdk.model.eventprocessing.*;
+import com.mparticle.sdk.model.registration.Account;
+import com.mparticle.sdk.model.registration.ModuleRegistrationResponse;
+import com.mparticle.sdk.model.registration.Setting;
+import com.mparticle.sdk.model.registration.UserIdentityPermission;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
+import retrofit.Call;
+import retrofit.Response;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
+public class IterableExtensionTest {
+
+    @org.junit.Test
+    public void testProcessEventProcessingRequest() throws Exception {
+        IterableExtension extension = new IterableExtension();
+        EventProcessingRequest request = new EventProcessingRequest();
+        request.setEvents(new LinkedList<>());
+        Account account = new Account();
+        HashMap<String, String> settings = new HashMap<String, String>();
+        settings.put(IterableExtension.SETTING_API_KEY, "cool api key");
+        account.setAccountSettings(settings);
+        request.setAccount(account);
+        extension.processEventProcessingRequest(request);
+        assertNotNull("IterableService should have been created", extension.iterableService);
+    }
+
+    @org.junit.Test
+    public void testUpdateUser() throws Exception {
+        IterableExtension extension = new IterableExtension();
+        extension.iterableService = Mockito.mock(IterableService.class);
+        Call callMock = Mockito.mock(Call.class);
+        Mockito.when(extension.iterableService.userUpdate(Mockito.any()))
+                .thenReturn(callMock);
+        IterableApiResponse apiResponse = new IterableApiResponse();
+        apiResponse.code = IterableApiResponse.SUCCESS_MESSAGE;
+        Response<IterableApiResponse> response = Response.success(apiResponse);
+        Mockito.when(callMock.execute()).thenReturn(response);
+        EventProcessingRequest request = new EventProcessingRequest();
+
+        //no user identities, no API call
+        extension.updateUser(new Event.Context(request));
+        UserUpdateRequest userUpdateRequest = new UserUpdateRequest();
+        Mockito.verify(extension.iterableService, Mockito.never()).userUpdate(userUpdateRequest);
+
+        //user identities but no email/userid, no API call
+        List<UserIdentity> identities = new LinkedList<>();
+        identities.add(new UserIdentity(UserIdentity.Type.FACEBOOK, Identity.Encoding.RAW, "123456"));
+        request.setUserIdentities(identities);
+        extension.updateUser(new Event.Context(request));
+        Mockito.verify(extension.iterableService, Mockito.never()).userUpdate(userUpdateRequest);
+
+        //ok, now we should get a single API call
+        identities.add(new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest@mparticle.com"));
+        identities.add(new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "123456"));
+        Map<String, String> userAttributes = new HashMap<String, String>();
+        userAttributes.put("some attribute key", "some attribute value");
+        request.setUserAttributes(userAttributes);
+        request.setUserIdentities(identities);
+
+        extension.updateUser(new Event.Context(request));
+
+        ArgumentCaptor<UserUpdateRequest> argument = ArgumentCaptor.forClass(UserUpdateRequest.class);
+        Mockito.verify(extension.iterableService).userUpdate(argument.capture());
+        assertEquals("mptest@mparticle.com", argument.getValue().email);
+        assertEquals("123456", argument.getValue().userId);
+        assertEquals(argument.getValue().dataFields.get("some attribute key"), "some attribute value");
+
+        apiResponse.code = "anything but success";
+
+        IOException exception = null;
+        try {
+            extension.updateUser(new Event.Context(request));
+        }catch (IOException ioe) {
+            exception = ioe;
+        }
+        assertNotNull("Iterable extension should have thrown an IOException", exception);
+
+    }
+
+    @org.junit.Test
+    public void testProcessUserAttributeChangeEvent() throws Exception {
+        //just verify that we're not processing anything - it's all done in processEventProcessingRequest
+        IterableExtension extension = new IterableExtension();
+        extension.iterableService = Mockito.mock(IterableService.class);
+        extension.processUserAttributeChangeEvent(new UserAttributeChangeEvent());
+        Mockito.verify(extension.iterableService, Mockito.never()).userUpdate(Mockito.any());
+    }
+
+    /**
+     * Simple test to make sure Iterable is registering for the proper data points.
+     * @throws Exception
+     */
+    @org.junit.Test
+    public void testProcessRegistrationRequest() throws Exception {
+        ModuleRegistrationResponse response = new IterableExtension().processRegistrationRequest(null);
+        List<UserIdentityPermission> userIdentities = response.getPermissions().getUserIdentities();
+        assertEquals(2, userIdentities.size());
+        boolean email, customer;
+        email = userIdentities.get(0).getType().equals(UserIdentity.Type.EMAIL) ||
+                userIdentities.get(1).getType().equals(UserIdentity.Type.EMAIL);
+
+        customer = userIdentities.get(0).getType().equals(UserIdentity.Type.CUSTOMER) ||
+                userIdentities.get(1).getType().equals(UserIdentity.Type.CUSTOMER);
+
+
+        assertTrue("Iterable Extension should register for email permission", email);
+        assertTrue("Iterable Extension should register for customer id permission", customer);
+
+        List<Setting> accountSettings = response.getEventProcessingRegistration().getAccountSettings();
+        assertTrue("There should be a single text setting (api key) for iterable", accountSettings.get(0).getType().equals(Setting.Type.TEXT));
+
+        List<Event.Type> eventTypes = response.getEventProcessingRegistration().getSupportedEventTypes();
+        assertTrue("Iterable should support custom events", eventTypes.contains(Event.Type.CUSTOM_EVENT));
+        assertTrue("Iterable should support push subscriptions", eventTypes.contains(Event.Type.PUSH_SUBSCRIPTION));
+        assertTrue("Iterable should support push receipts", eventTypes.contains(Event.Type.PUSH_MESSAGE_RECEIPT));
+        assertTrue("Iterable should support user attribute changes", eventTypes.contains(Event.Type.USER_ATTRIBUTE_CHANGE));
+        assertTrue("Iterable should support user identity changes", eventTypes.contains(Event.Type.USER_IDENTITY_CHANGE));
+
+        Setting setting = response.getAudienceProcessingRegistration().getAudienceSubscriptionSettings().get(0);
+        assertTrue("Iterable audiences should have a single Integer setting", setting.getType().equals(Setting.Type.INTEGER));
+    }
+
+    @org.junit.Test
+    public void testProcessCustomEvent() throws Exception {
+        IterableExtension extension = new IterableExtension();
+        extension.iterableService = Mockito.mock(IterableService.class);
+        Call callMock = Mockito.mock(Call.class);
+        Mockito.when(extension.iterableService.track(Mockito.any()))
+                .thenReturn(callMock);
+        IterableApiResponse apiResponse = new IterableApiResponse();
+        apiResponse.code = IterableApiResponse.SUCCESS_MESSAGE;
+        Response<IterableApiResponse> response = Response.success(apiResponse);
+        Mockito.when(callMock.execute()).thenReturn(response);
+
+        long timeStamp = System.currentTimeMillis();
+        CustomEvent event = new CustomEvent();
+        event.setTimestamp(timeStamp);
+        event.setName("My Event Name");
+        EventProcessingRequest request = new EventProcessingRequest();
+        List<UserIdentity> userIdentities = new LinkedList<>();
+        userIdentities.add( new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest@mparticle.com"));
+        userIdentities.add( new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "123456"));
+        request.setUserIdentities(userIdentities);
+        Event.Context context = new Event.Context(request);
+        event.setContext(context);
+        Map<String, String> attributes = new HashMap<>();
+        attributes.put("some attribute key", "some attribute value");
+        event.setAttributes(attributes);
+
+        extension.processCustomEvent(event);
+
+        ArgumentCaptor<TrackRequest> argument = ArgumentCaptor.forClass(TrackRequest.class);
+        Mockito.verify(extension.iterableService).track(argument.capture());
+        assertEquals("My Event Name", argument.getValue().getEventName());
+        assertEquals("mptest@mparticle.com", argument.getValue().email);
+        assertEquals("123456", argument.getValue().userId);
+        assertEquals("some attribute value", argument.getValue().dataFields.get("some attribute key"));
+        assertEquals((int)(timeStamp/1000.0), argument.getValue().createdAt);
+
+        apiResponse.code = "anything but success";
+
+        IOException exception = null;
+        try {
+            extension.processCustomEvent(event);
+        }catch (IOException ioe) {
+            exception = ioe;
+        }
+        assertNotNull("Iterable extension should have thrown an IOException", exception);
+    }
+
+    @org.junit.Test
+    public void testProcessPushMessageReceiptEvent() throws Exception {
+        IterableExtension extension = new IterableExtension();
+        extension.iterableService = Mockito.mock(IterableService.class);
+        Call callMock = Mockito.mock(Call.class);
+        Mockito.when(extension.iterableService.trackPushOpen(Mockito.any()))
+                .thenReturn(callMock);
+        IterableApiResponse apiResponse = new IterableApiResponse();
+        apiResponse.code = IterableApiResponse.SUCCESS_MESSAGE;
+        Response<IterableApiResponse> response = Response.success(apiResponse);
+        Mockito.when(callMock.execute()).thenReturn(response);
+        EventProcessingRequest eventProcessingRequest = new EventProcessingRequest();
+        eventProcessingRequest.setUserIdentities(new LinkedList<>());
+        PushMessageReceiptEvent event = new PushMessageReceiptEvent();
+        event.setContext(new Event.Context(eventProcessingRequest));
+        IOException exception = null;
+        event.setPayload("anything to get past null check");
+        try{
+            extension.processPushMessageReceiptEvent(event);
+        }catch (IOException ioe) {
+            exception = ioe;
+        }
+        assertNotNull("Iterable should have thrown an exception due to missing email/customerid", exception);
+
+        List<UserIdentity> userIdentities = new LinkedList<>();
+        userIdentities.add( new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest@mparticle.com"));
+        userIdentities.add( new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "123456"));
+        eventProcessingRequest.setUserIdentities(userIdentities);
+        event.setContext(new Event.Context(eventProcessingRequest));
+        JSONObject iterableObject = new JSONObject();
+        iterableObject.put("campaignId", 12345);
+        iterableObject.put("templateId", 54321);
+        JSONObject payload = new JSONObject();
+        payload.put("itbl", iterableObject);
+        event.setPayload(payload.toString());
+
+        long timeStamp = System.currentTimeMillis();
+        event.setTimestamp(timeStamp);
+
+        extension.processPushMessageReceiptEvent(event);
+
+        ArgumentCaptor<TrackPushOpenRequest> argument = ArgumentCaptor.forClass(TrackPushOpenRequest.class);
+        Mockito.verify(extension.iterableService).trackPushOpen(argument.capture());
+        assertEquals("mptest@mparticle.com", argument.getValue().email);
+        assertEquals("123456", argument.getValue().userId);
+        assertEquals(12345, argument.getValue().campaignId);
+        assertEquals(54321, argument.getValue().templateId);
+
+
+        apiResponse.code = "anything but success";
+
+        IOException exception2 = null;
+        try {
+            extension.processPushMessageReceiptEvent(event);
+        }catch (IOException ioe) {
+            exception2 = ioe;
+        }
+        assertNotNull("Iterable extension should have thrown an IOException", exception2);
+
+    }
+
+    /**
+     *
+     * This test creates 3 audiences and 2 users.
+     *
+     * User 1: Two audiences added, 1 removed
+     * User 2: 1 audience removed, 2 added
+     *
+     * It then verifies that subscribe/unsubcribe are called the correct amount and with the right list ids
+     */
+    @org.junit.Test
+    public void testProcessAudienceMembershipChangeRequest() throws Exception {
+        IterableExtension extension = new IterableExtension();
+        IterableService service = Mockito.mock(IterableService.class);
+        Call callMock = Mockito.mock(Call.class);
+        Mockito.when(service.trackPushOpen(Mockito.any()))
+                .thenReturn(callMock);
+        IterableApiResponse apiResponse = new IterableApiResponse();
+        apiResponse.code = IterableApiResponse.SUCCESS_MESSAGE;
+        Response<IterableApiResponse> response = Response.success(apiResponse);
+        Mockito.when(callMock.execute()).thenReturn(response);
+
+        Audience audience = new Audience();
+        Map<String, String> audienceSubscriptionSettings = new HashMap<>();
+        audienceSubscriptionSettings.put(IterableExtension.SETTING_LIST_ID, "1");
+        audience.setAudienceSubscriptionSettings(audienceSubscriptionSettings);
+
+        Audience audience2 = new Audience();
+        Map<String, String> audienceSubscriptionSettings2 = new HashMap<>();
+        audienceSubscriptionSettings2.put(IterableExtension.SETTING_LIST_ID, "2");
+        audience2.setAudienceSubscriptionSettings(audienceSubscriptionSettings2);
+
+        Audience audience3 = new Audience();
+        Map<String, String> audienceSubscriptionSettings3 = new HashMap<>();
+        audienceSubscriptionSettings3.put(IterableExtension.SETTING_LIST_ID, "3");
+        audience3.setAudienceSubscriptionSettings(audienceSubscriptionSettings3);
+
+        List<Audience> list1 = new LinkedList<>();
+        list1.add(audience);
+        list1.add(audience2);
+
+        List<Audience> list2 = new LinkedList<>();
+        list2.add(audience3);
+
+        List<UserProfile> profiles = new LinkedList<>();
+        UserProfile profile1 = new UserProfile();
+        profile1.setAddedAudiences(list1);
+        profile1.setRemovedAudiences(list2);
+        List<UserIdentity> userIdentities1 = new LinkedList<>();
+        userIdentities1.add( new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest@mparticle.com"));
+        userIdentities1.add( new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "123456"));
+        profile1.setUserIdentities(userIdentities1);
+        profiles.add(profile1);
+
+        UserProfile profile2 = new UserProfile();
+        profile2.setAddedAudiences(list2);
+        profile2.setRemovedAudiences(list1);
+        List<UserIdentity> userIdentities2 = new LinkedList<>();
+        userIdentities2.add( new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest-2@mparticle.com"));
+        userIdentities2.add( new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "1234567"));
+        profile2.setUserIdentities(userIdentities2);
+        profiles.add(profile2);
+
+        AudienceMembershipChangeRequest request = new AudienceMembershipChangeRequest();
+        Account account = new Account();
+        Map<String, String> settings = new HashMap<>();
+        settings.put(IterableExtension.SETTING_API_KEY, "some api key");
+        account.setAccountSettings(settings);
+        request.setAccount(account);
+        request.setUserProfiles(profiles);
+
+        extension.processAudienceMembershipChangeRequest(request, service);
+
+        ArgumentCaptor<SubscribeRequest> argument = ArgumentCaptor.forClass(SubscribeRequest.class);
+        Mockito.verify(service, Mockito.times(3)).listSubscribe(argument.capture());
+        List<SubscribeRequest> subscribeRequests = argument.getAllValues();
+        int i = 0;
+        for (SubscribeRequest subscribeRequest : subscribeRequests) {
+            switch (subscribeRequest.listId) {
+                case 1:
+                    assertEquals(subscribeRequest.subscribers.get(0).email, "mptest@mparticle.com");
+                    i++;
+                    break;
+                case 2:
+                    assertEquals(subscribeRequest.subscribers.get(0).email, "mptest@mparticle.com");
+                    i++;
+                    break;
+                case 3:
+                    assertEquals(subscribeRequest.subscribers.get(0).email, "mptest-2@mparticle.com");
+                    i++;
+                    break;
+            }
+        }
+        assertEquals(3, i);
+
+        ArgumentCaptor<UnsubscribeRequest> unsubArg = ArgumentCaptor.forClass(UnsubscribeRequest.class);
+        Mockito.verify(service, Mockito.times(3)).listUnsubscribe(unsubArg.capture());
+        List<UnsubscribeRequest> unsubscribeRequests = unsubArg.getAllValues();
+        i = 0;
+        for (UnsubscribeRequest unsubscribeRequest : unsubscribeRequests) {
+            switch (unsubscribeRequest.listId) {
+                case 1:
+                    assertEquals(unsubscribeRequest.subscribers.get(0).email, "mptest-2@mparticle.com");
+                    i++;
+                    break;
+                case 2:
+                    assertEquals(unsubscribeRequest.subscribers.get(0).email, "mptest-2@mparticle.com");
+                    i++;
+                    break;
+                case 3:
+                    assertEquals(unsubscribeRequest.subscribers.get(0).email, "mptest@mparticle.com");
+                    i++;
+                    break;
+            }
+        }
+        assertEquals(3, i);
+    }
+}
