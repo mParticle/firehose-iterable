@@ -20,6 +20,9 @@ public class IterableExtension extends MessageProcessor {
 
     public static final String NAME = "IterableExtension";
     public static final String SETTING_API_KEY = "apiKey";
+    public static final String SETTING_GCM_NAME_KEY = "gcmIntegrationName";
+    public static final String SETTING_APNS_KEY = "apnsProdIntegrationName";
+    public static final String SETTING_APNS_SANDBOX_KEY = "apnsSandboxIntegrationName";
     public static final String SETTING_LIST_ID = "listId";
     IterableService iterableService;
 
@@ -42,11 +45,14 @@ public class IterableExtension extends MessageProcessor {
             boolean sandboxed = ((IosRuntimeEnvironment) event.getContext().getRuntimeEnvironment()).getIsSandboxed();
             if (sandboxed) {
                 request.device.platform = Device.PLATFORM_APNS_SANDBOX;
+                request.device.applicationName = event.getContext().getAccount().getAccountSettings().get(SETTING_APNS_SANDBOX_KEY);
             } else {
                 request.device.platform = Device.PLATFORM_APNS;
+                request.device.applicationName = event.getContext().getAccount().getAccountSettings().get(SETTING_APNS_KEY);
             }
         } else if (event.getContext().getRuntimeEnvironment().getType().equals(RuntimeEnvironment.Type.ANDROID)) {
             request.device.platform = Device.PLATFORM_GCM;
+            request.device.applicationName = event.getContext().getAccount().getAccountSettings().get(SETTING_GCM_NAME_KEY);
         } else {
             throw new IOException("Cannot process push subscription event for unknown RuntimeEnvironment type.");
         }
@@ -111,7 +117,6 @@ public class IterableExtension extends MessageProcessor {
         );
         response.setPermissions(permissions);
 
-        // Register a mobile event stream listener
         EventProcessingRegistration eventProcessingRegistration = new EventProcessingRegistration()
                 .setDescription("Iterable Event Processor")
                 .setSupportedRuntimeEnvironments(
@@ -120,11 +125,22 @@ public class IterableExtension extends MessageProcessor {
                                 RuntimeEnvironment.Type.IOS)
                 );
 
-        // Add account settings that should be provided by the subscribers, such as an API key
         List<Setting> accountSettings = new ArrayList<>();
         accountSettings.add(
                 new TextSetting(SETTING_API_KEY, "API Key")
                         .setIsRequired(true)
+        );
+        accountSettings.add(
+                new TextSetting(SETTING_GCM_NAME_KEY, "GCM Push Integration Name")
+                        .setIsRequired(true)
+        );
+        accountSettings.add(
+                new TextSetting(SETTING_APNS_SANDBOX_KEY, "APNS Sandbox Integration Name")
+                        .setIsRequired(false)
+        );
+        accountSettings.add(
+                new TextSetting(SETTING_APNS_KEY, "APNS Production Integration Name")
+                        .setIsRequired(false)
         );
         eventProcessingRegistration.setAccountSettings(accountSettings);
 
@@ -135,6 +151,7 @@ public class IterableExtension extends MessageProcessor {
                 Event.Type.PUSH_MESSAGE_RECEIPT,
                 Event.Type.USER_ATTRIBUTE_CHANGE,
                 Event.Type.USER_IDENTITY_CHANGE);
+
         eventProcessingRegistration.setSupportedEventTypes(supportedEventTypes);
         response.setEventProcessingRegistration(eventProcessingRegistration);
 

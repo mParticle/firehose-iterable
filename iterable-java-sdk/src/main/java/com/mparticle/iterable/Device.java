@@ -6,6 +6,7 @@ import java.util.Map;
 public class Device {
     public String token;
     public String platform;
+    public String applicationName;
     public Map<String, String> dataFields;
     public static String PLATFORM_APNS = "APNS";
     public static String PLATFORM_APNS_SANDBOX = "APNS_SANDBOX";

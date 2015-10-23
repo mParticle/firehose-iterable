@@ -172,7 +172,7 @@ public class IterableExtensionTest {
         assertEquals("mptest@mparticle.com", argument.getValue().email);
         assertEquals("123456", argument.getValue().userId);
         assertEquals("some attribute value", argument.getValue().dataFields.get("some attribute key"));
-        assertEquals((int)(timeStamp/1000.0), argument.getValue().createdAt);
+        assertEquals((int)(timeStamp/1000.0), argument.getValue().createdAt + 0);
 
         apiResponse.code = "anything but success";
 
@@ -230,8 +230,8 @@ public class IterableExtensionTest {
         Mockito.verify(extension.iterableService).trackPushOpen(argument.capture());
         assertEquals("mptest@mparticle.com", argument.getValue().email);
         assertEquals("123456", argument.getValue().userId);
-        assertEquals(12345, argument.getValue().campaignId);
-        assertEquals(54321, argument.getValue().templateId);
+        assertEquals(12345, argument.getValue().campaignId+0);
+        assertEquals(54321, argument.getValue().templateId+0);
 
 
         apiResponse.code = "anything but success";

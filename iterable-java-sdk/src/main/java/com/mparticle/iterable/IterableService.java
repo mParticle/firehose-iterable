@@ -1,11 +1,17 @@
 package com.mparticle.iterable;
 
 import com.squareup.okhttp.HttpUrl;
+import com.squareup.okhttp.Interceptor;
+import com.squareup.okhttp.OkHttpClient;
+import com.squareup.okhttp.Response;
 import retrofit.Call;
 import retrofit.GsonConverterFactory;
 import retrofit.Retrofit;
 import retrofit.http.Body;
+import retrofit.http.GET;
 import retrofit.http.POST;
+
+import java.io.IOException;
 
 /**
  * Iterable API defined here:
@@ -36,7 +42,25 @@ public interface IterableService {
     @POST("api/lists/unsubscribe")
     Call<ListResponse> listUnsubscribe(@Body UnsubscribeRequest unsubscribeRequest);
 
+    /**
+     * At the moment this is only used for unit testing the list subscribe/unsubscribe API calls
+     */
+    @GET("api/lists")
+    Call<GetListResponse> lists();
+
     static IterableService newInstance(String apiKey) {
+        //all of this intercepter/chain stuff is just so callers don't
+        //have to pass the API key into every single method/api call
+        OkHttpClient client = new OkHttpClient();
+        client.interceptors().add(
+                chain -> chain.proceed(chain.request().newBuilder().url(
+                                chain.request()
+                                .httpUrl()
+                                .newBuilder()
+                                .addQueryParameter(IterableService.PARAM_API_KEY, apiKey)
+                                .build()
+                ).build()
+        ));
         HttpUrl url = new HttpUrl.Builder()
                 .scheme("https")
                 .host(IterableService.HOST)
@@ -44,6 +68,7 @@ public interface IterableService {
                 .build();
         Retrofit retrofit = new Retrofit.Builder()
                 .baseUrl(url)
+                .client(client)
                 .addConverterFactory(GsonConverterFactory.create())
                 .build();
         return retrofit.create(IterableService.class);

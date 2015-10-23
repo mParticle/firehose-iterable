@@ -3,8 +3,8 @@ package com.mparticle.iterable;
 import java.util.List;
 
 public class UnsubscribeRequest {
-    public int listId;
+    public Integer listId;
     public List<Unsubscriber> subscribers;
-    public int campaignId;
-    public boolean channelUnsubscribe;
+    public Integer campaignId;
+    public Boolean channelUnsubscribe;
 }

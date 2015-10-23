@@ -12,7 +12,7 @@ public abstract class IterableRequest {
     /**
      *  Time event happened. Set to the time event was received if unspecified. Expects a unix timestamp.,
      */
-    public int createdAt;
+    public Integer createdAt;
     /**
      *  Additional data associated with event (i.e. item id, item amount),
      */
@@ -24,9 +24,9 @@ public abstract class IterableRequest {
     /**
      * Campaign tied to conversion
      */
-    public int campaignId;
+    public Integer campaignId;
 
-    public int templateId;
+    public Integer templateId;
 
     public IterableRequest() {
         super();
