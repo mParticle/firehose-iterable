@@ -116,9 +116,8 @@ public class IterableExtension extends MessageProcessor {
                 )
         );
         response.setPermissions(permissions);
-
+        response.setDescription("Iterable Event and Segment Integration");
         EventProcessingRegistration eventProcessingRegistration = new EventProcessingRegistration()
-                .setDescription("Iterable Event Processor")
                 .setSupportedRuntimeEnvironments(
                         Arrays.asList(
                                 RuntimeEnvironment.Type.ANDROID,
@@ -156,7 +155,6 @@ public class IterableExtension extends MessageProcessor {
         response.setEventProcessingRegistration(eventProcessingRegistration);
 
         AudienceProcessingRegistration audienceRegistration = new AudienceProcessingRegistration();
-        audienceRegistration.setDescription("Iterable Segmentation Processor");
         audienceRegistration.setAccountSettings(accountSettings);
         List<Setting> subscriptionSettings = new LinkedList<>();
         subscriptionSettings.add(new IntegerSetting(SETTING_LIST_ID, "List ID"));
