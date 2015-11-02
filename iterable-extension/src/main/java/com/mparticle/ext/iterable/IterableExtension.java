@@ -131,7 +131,7 @@ public class IterableExtension extends MessageProcessor {
         );
         accountSettings.add(
                 new TextSetting(SETTING_GCM_NAME_KEY, "GCM Push Integration Name")
-                        .setIsRequired(true)
+                        .setIsRequired(false)
         );
         accountSettings.add(
                 new TextSetting(SETTING_APNS_SANDBOX_KEY, "APNS Sandbox Integration Name")
