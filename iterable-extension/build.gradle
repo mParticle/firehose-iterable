@@ -1,7 +1,6 @@
 apply plugin: 'java'
 
 repositories {
-    mavenLocal()
     mavenCentral()
     maven { url "http://maven.mparticle.com/" }
 }
@@ -10,7 +9,7 @@ dependencies {
     compile (
             'com.amazonaws:aws-lambda-java-core:1.1.0',
             'com.amazonaws:aws-lambda-java-events:1.1.0',
-            'com.mparticle:java-sdk:1.0.0'
+            'com.mparticle:java-sdk:1.0.1'
     )
     compile project(':iterable-java-sdk')
     testCompile('junit:junit:4.12')

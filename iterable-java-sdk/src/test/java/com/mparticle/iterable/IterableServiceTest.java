@@ -5,6 +5,7 @@ import org.mockito.Mockito;
 import retrofit.Call;
 import retrofit.Response;
 
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
@@ -40,6 +41,8 @@ public class IterableServiceTest {
             Mockito.when(iterableService.registerToken(Mockito.any()))
                     .thenReturn(callMock);
             Mockito.when(iterableService.trackPushOpen(Mockito.any()))
+                    .thenReturn(callMock);
+            Mockito.when(iterableService.trackPurchase(Mockito.any()))
                     .thenReturn(callMock);
             IterableApiResponse apiResponse = new IterableApiResponse();
             apiResponse.code = IterableApiResponse.SUCCESS_MESSAGE;
@@ -152,5 +155,26 @@ public class IterableServiceTest {
         assertTrue("Retrofit request not successful:\nMessage: " + response.message() + "\nCode: " + response.code(), response.isSuccess());
         //just check for 200 since it's not feasible in an automated test to wait for Iterable to update its lists such an an unsubscribe will always work.
         // assertTrue("Iterable response was not successful:\nSuccess Count: " + response.body().successCount + "\nFail Count: " + response.body().failCount, response.body().failCount < 1);
+    }
+
+    @org.junit.Test
+    public void testTrackPurchase() throws Exception {
+        TrackPurchaseRequest request = new TrackPurchaseRequest();
+        request.user = new ApiUser();
+        request.user.email = TEST_EMAIL;
+        request.user.userId = TEST_USER_ID;
+        request.items = new LinkedList<>();
+        CommerceItem item = new CommerceItem();
+        item.sku = "test product sku";
+        item.id = "test product sku";
+        item.price = new BigDecimal(10d);
+        item.categories = new LinkedList<>();
+        item.categories.add("test product category");
+        item.name = "test product name";
+        request.items.add(item);
+        request.total = new BigDecimal(100d);
+        Response<IterableApiResponse> response = iterableService.trackPurchase(request).execute();
+        assertTrue("Retrofit request not successful:\nMessage: " + response.message() + "\nCode: " + response.code(), response.isSuccess());
+        assertTrue("Iterable response was not successful:\n" + response.body().toString(), response.body().isSuccess());
     }
 }

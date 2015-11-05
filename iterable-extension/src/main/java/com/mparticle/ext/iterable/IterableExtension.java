@@ -15,6 +15,7 @@ import retrofit.Response;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class IterableExtension extends MessageProcessor {
 
@@ -99,6 +100,52 @@ public class IterableExtension extends MessageProcessor {
     }
 
     @Override
+    public void processProductActionEvent(ProductActionEvent event) throws IOException {
+        if (event.getAction().equals(ProductActionEvent.Action.PURCHASE)) {
+            TrackPurchaseRequest purchaseRequest = new TrackPurchaseRequest();
+            purchaseRequest.createdAt = (int) (event.getTimestamp() / 1000.0);
+            List<UserIdentity> identities = event.getContext().getUserIdentities();
+            ApiUser apiUser = new ApiUser();
+            if (identities != null) {
+                for (UserIdentity identity : identities) {
+                    if (identity.getType().equals(UserIdentity.Type.EMAIL)) {
+                        apiUser.email = identity.getValue();
+                    } else if (identity.getType().equals(UserIdentity.Type.CUSTOMER)) {
+                        apiUser.userId = identity.getValue();
+                    }
+                }
+            }
+            apiUser.dataFields = event.getContext().getUserAttributes();
+            purchaseRequest.user = apiUser;
+            purchaseRequest.total = event.getTotalAmount();
+            if (event.getProducts() != null) {
+                purchaseRequest.items = event.getProducts().stream()
+                        .map(p -> convertToCommerceItem(p))
+                        .collect(Collectors.toList());
+            }
+            iterableService.trackPurchase(purchaseRequest);
+        }
+    }
+
+    CommerceItem convertToCommerceItem(Product product) {
+        CommerceItem item = new CommerceItem();
+        item.dataFields = product.getAttributes();
+        //iterable requires ID, and they also take SKU. mParticle doesn't differentiate
+        //between sku and id. so, use our sku/id for both in Iterable:
+        item.id = item.sku = product.getId();
+        item.name = product.getName();
+        item.price = product.getPrice();
+        if (product.getQuantity() != null) {
+            item.quantity = product.getQuantity().intValue();
+        }
+        if (product.getCategory() != null) {
+            item.categories = new LinkedList<>();
+            item.categories.add(product.getCategory());
+        }
+        return item;
+    }
+
+    @Override
     public void processUserAttributeChangeEvent(UserAttributeChangeEvent event) throws IOException {
         //there's no reason to do this - it's already done at the start of batch processing
         //updateUser(event.getContext());
@@ -124,24 +171,33 @@ public class IterableExtension extends MessageProcessor {
                                 RuntimeEnvironment.Type.IOS)
                 );
 
-        List<Setting> accountSettings = new ArrayList<>();
-        accountSettings.add(
-                new TextSetting(SETTING_API_KEY, "API Key")
-                        .setIsRequired(true)
-        );
-        accountSettings.add(
+        List<Setting> eventSettings = new ArrayList<>();
+        List<Setting> audienceSettings = new ArrayList<>();
+        Setting apiKey = new TextSetting(SETTING_API_KEY, "API Key")
+                .setIsRequired(true)
+                .setIsConfidential(true)
+                .setDescription("API key used to connect to the Iterable API - see the Integrations section of your Iterable account.");
+
+        eventSettings.add(apiKey);
+        audienceSettings.add(apiKey);
+
+        eventSettings.add(
                 new TextSetting(SETTING_GCM_NAME_KEY, "GCM Push Integration Name")
                         .setIsRequired(false)
+                        .setDescription("GCM integration name set up in the Mobile Push section of your Iterable account.")
+
         );
-        accountSettings.add(
+        eventSettings.add(
                 new TextSetting(SETTING_APNS_SANDBOX_KEY, "APNS Sandbox Integration Name")
                         .setIsRequired(false)
+                        .setDescription("APNS Sandbox integration name set up in the Mobile Push section of your Iterable account.")
         );
-        accountSettings.add(
+        eventSettings.add(
                 new TextSetting(SETTING_APNS_KEY, "APNS Production Integration Name")
                         .setIsRequired(false)
+                        .setDescription("APNS Production integration name set up in the Mobile Push section of your Iterable account.")
         );
-        eventProcessingRegistration.setAccountSettings(accountSettings);
+        eventProcessingRegistration.setAccountSettings(eventSettings);
 
         // Specify supported event types
         List<Event.Type> supportedEventTypes = Arrays.asList(
@@ -149,17 +205,20 @@ public class IterableExtension extends MessageProcessor {
                 Event.Type.PUSH_SUBSCRIPTION,
                 Event.Type.PUSH_MESSAGE_RECEIPT,
                 Event.Type.USER_ATTRIBUTE_CHANGE,
-                Event.Type.USER_IDENTITY_CHANGE);
+                Event.Type.USER_IDENTITY_CHANGE,
+                Event.Type.PRODUCT_ACTION);
 
         eventProcessingRegistration.setSupportedEventTypes(supportedEventTypes);
         response.setEventProcessingRegistration(eventProcessingRegistration);
 
         AudienceProcessingRegistration audienceRegistration = new AudienceProcessingRegistration();
-        audienceRegistration.setAccountSettings(accountSettings);
+        audienceRegistration.setAccountSettings(audienceSettings);
         List<Setting> subscriptionSettings = new LinkedList<>();
-        subscriptionSettings.add(new IntegerSetting(SETTING_LIST_ID, "List ID"));
+        IntegerSetting listIdSetting = new IntegerSetting(SETTING_LIST_ID, "List ID");
+        listIdSetting.setIsRequired(true);
+        listIdSetting.setDescription("The ID of the Iterable list to populate with the users from this segment.");
+        subscriptionSettings.add(listIdSetting);
         audienceRegistration.setAudienceSubscriptionSettings(subscriptionSettings);
-
         response.setAudienceProcessingRegistration(audienceRegistration);
 
         return response;
@@ -235,7 +294,7 @@ public class IterableExtension extends MessageProcessor {
         return processAudienceMembershipChangeRequest(request, service);
     }
 
-    public AudienceMembershipChangeResponse processAudienceMembershipChangeRequest(AudienceMembershipChangeRequest request, IterableService service) throws IOException{
+    public AudienceMembershipChangeResponse processAudienceMembershipChangeRequest(AudienceMembershipChangeRequest request, IterableService service) throws IOException {
         HashMap<Integer, List<ApiUser>> additions = new HashMap<>();
         HashMap<Integer, List<Unsubscriber>> removals = new HashMap<>();
         for (UserProfile profile : request.getUserProfiles()) {
@@ -293,7 +352,7 @@ public class IterableExtension extends MessageProcessor {
                     throw new IOException("Error sending list subscribe to Iterable: HTTP " + response.code());
                 }
             } catch (Exception e) {
-                //TODO log something
+
             }
         }
 
@@ -312,11 +371,9 @@ public class IterableExtension extends MessageProcessor {
                     throw new IOException("Error sending list unsubscribe to Iterable: HTTP " + response.code());
                 }
             } catch (Exception e) {
-                //TODO log something
+
             }
         }
-
-        //TODO does this response matter?
         return new AudienceMembershipChangeResponse();
     }
 

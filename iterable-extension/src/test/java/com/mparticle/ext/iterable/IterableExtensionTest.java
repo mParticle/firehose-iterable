@@ -16,14 +16,13 @@ import retrofit.Call;
 import retrofit.Response;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 
 public class IterableExtensionTest {
 
@@ -87,7 +86,7 @@ public class IterableExtensionTest {
         IOException exception = null;
         try {
             extension.updateUser(new Event.Context(request));
-        }catch (IOException ioe) {
+        } catch (IOException ioe) {
             exception = ioe;
         }
         assertNotNull("Iterable extension should have thrown an IOException", exception);
@@ -105,6 +104,7 @@ public class IterableExtensionTest {
 
     /**
      * Simple test to make sure Iterable is registering for the proper data points.
+     *
      * @throws Exception
      */
     @org.junit.Test
@@ -155,8 +155,8 @@ public class IterableExtensionTest {
         event.setName("My Event Name");
         EventProcessingRequest request = new EventProcessingRequest();
         List<UserIdentity> userIdentities = new LinkedList<>();
-        userIdentities.add( new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest@mparticle.com"));
-        userIdentities.add( new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "123456"));
+        userIdentities.add(new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest@mparticle.com"));
+        userIdentities.add(new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "123456"));
         request.setUserIdentities(userIdentities);
         Event.Context context = new Event.Context(request);
         event.setContext(context);
@@ -172,14 +172,14 @@ public class IterableExtensionTest {
         assertEquals("mptest@mparticle.com", argument.getValue().email);
         assertEquals("123456", argument.getValue().userId);
         assertEquals("some attribute value", argument.getValue().dataFields.get("some attribute key"));
-        assertEquals((int)(timeStamp/1000.0), argument.getValue().createdAt + 0);
+        assertEquals((int) (timeStamp / 1000.0), argument.getValue().createdAt + 0);
 
         apiResponse.code = "anything but success";
 
         IOException exception = null;
         try {
             extension.processCustomEvent(event);
-        }catch (IOException ioe) {
+        } catch (IOException ioe) {
             exception = ioe;
         }
         assertNotNull("Iterable extension should have thrown an IOException", exception);
@@ -202,16 +202,16 @@ public class IterableExtensionTest {
         event.setContext(new Event.Context(eventProcessingRequest));
         IOException exception = null;
         event.setPayload("anything to get past null check");
-        try{
+        try {
             extension.processPushMessageReceiptEvent(event);
-        }catch (IOException ioe) {
+        } catch (IOException ioe) {
             exception = ioe;
         }
         assertNotNull("Iterable should have thrown an exception due to missing email/customerid", exception);
 
         List<UserIdentity> userIdentities = new LinkedList<>();
-        userIdentities.add( new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest@mparticle.com"));
-        userIdentities.add( new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "123456"));
+        userIdentities.add(new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest@mparticle.com"));
+        userIdentities.add(new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "123456"));
         eventProcessingRequest.setUserIdentities(userIdentities);
         event.setContext(new Event.Context(eventProcessingRequest));
         JSONObject iterableObject = new JSONObject();
@@ -230,8 +230,8 @@ public class IterableExtensionTest {
         Mockito.verify(extension.iterableService).trackPushOpen(argument.capture());
         assertEquals("mptest@mparticle.com", argument.getValue().email);
         assertEquals("123456", argument.getValue().userId);
-        assertEquals(12345, argument.getValue().campaignId+0);
-        assertEquals(54321, argument.getValue().templateId+0);
+        assertEquals(12345, argument.getValue().campaignId + 0);
+        assertEquals(54321, argument.getValue().templateId + 0);
 
 
         apiResponse.code = "anything but success";
@@ -239,7 +239,7 @@ public class IterableExtensionTest {
         IOException exception2 = null;
         try {
             extension.processPushMessageReceiptEvent(event);
-        }catch (IOException ioe) {
+        } catch (IOException ioe) {
             exception2 = ioe;
         }
         assertNotNull("Iterable extension should have thrown an IOException", exception2);
@@ -247,12 +247,11 @@ public class IterableExtensionTest {
     }
 
     /**
-     *
      * This test creates 3 audiences and 2 users.
-     *
+     * <p>
      * User 1: Two audiences added, 1 removed
      * User 2: 1 audience removed, 2 added
-     *
+     * <p>
      * It then verifies that subscribe/unsubcribe are called the correct amount and with the right list ids
      */
     @org.junit.Test
@@ -294,8 +293,8 @@ public class IterableExtensionTest {
         profile1.setAddedAudiences(list1);
         profile1.setRemovedAudiences(list2);
         List<UserIdentity> userIdentities1 = new LinkedList<>();
-        userIdentities1.add( new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest@mparticle.com"));
-        userIdentities1.add( new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "123456"));
+        userIdentities1.add(new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest@mparticle.com"));
+        userIdentities1.add(new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "123456"));
         profile1.setUserIdentities(userIdentities1);
         profiles.add(profile1);
 
@@ -303,8 +302,8 @@ public class IterableExtensionTest {
         profile2.setAddedAudiences(list2);
         profile2.setRemovedAudiences(list1);
         List<UserIdentity> userIdentities2 = new LinkedList<>();
-        userIdentities2.add( new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest-2@mparticle.com"));
-        userIdentities2.add( new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "1234567"));
+        userIdentities2.add(new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest-2@mparticle.com"));
+        userIdentities2.add(new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "1234567"));
         profile2.setUserIdentities(userIdentities2);
         profiles.add(profile2);
 
@@ -361,5 +360,76 @@ public class IterableExtensionTest {
             }
         }
         assertEquals(3, i);
+    }
+
+    @org.junit.Test
+    public void testConvertToCommerceItem() throws Exception {
+        Product product = new Product();
+        product.setId("some id");
+        product.setName("some name");
+        product.setCategory("some category");
+        Map<String, String> attributes = new HashMap<>();
+        attributes.put("a key", "a value");
+        product.setAttributes(attributes);
+        product.setQuantity(new BigDecimal(1.4));
+        CommerceItem item = new IterableExtension().convertToCommerceItem(product);
+        assertEquals("some id", item.id);
+        assertEquals("some id", item.sku);
+        assertEquals("some name", item.name);
+        assertEquals("some category", item.categories.get(0));
+        assertEquals("a value", item.dataFields.get("a key"));
+        assertEquals((Integer) new BigDecimal(1.4).intValue(), item.quantity);
+    }
+
+    @org.junit.Test
+    public void testProcessProductActionEvent() throws Exception {
+        ProductActionEvent event = new ProductActionEvent();
+        IterableExtension extension = new IterableExtension();
+        extension.iterableService = Mockito.mock(IterableService.class);
+        Call callMock = Mockito.mock(Call.class);
+        Mockito.when(extension.iterableService.trackPurchase(Mockito.any()))
+                .thenReturn(callMock);
+        IterableApiResponse apiResponse = new IterableApiResponse();
+        apiResponse.code = IterableApiResponse.SUCCESS_MESSAGE;
+        Response<IterableApiResponse> response = Response.success(apiResponse);
+        Mockito.when(callMock.execute()).thenReturn(response);
+        long timeStamp = System.currentTimeMillis();
+
+        event.setTimestamp(timeStamp);
+
+        EventProcessingRequest request = new EventProcessingRequest();
+        List<UserIdentity> userIdentities = new LinkedList<>();
+        userIdentities.add(new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest@mparticle.com"));
+        userIdentities.add(new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "123456"));
+        request.setUserIdentities(userIdentities);
+        Event.Context context = new Event.Context(request);
+        event.setContext(context);
+        event.setTotalAmount(new BigDecimal(101d));
+        List<Product> products = new LinkedList<>();
+        Product product1 = new Product();
+        product1.setId("product_id_1");
+        Product product2 = new Product();
+        product2.setId("product_id_2");
+        products.add(product1);
+        products.add(product2);
+        event.setProducts(products);
+
+        for (ProductActionEvent.Action action : ProductActionEvent.Action.values()) {
+            if (action != ProductActionEvent.Action.PURCHASE) {
+                event.setAction(action);
+                extension.processProductActionEvent(event);
+                Mockito.verifyZeroInteractions(extension.iterableService);
+            }
+        }
+
+        event.setAction(ProductActionEvent.Action.PURCHASE);
+        extension.processProductActionEvent(event);
+        ArgumentCaptor<TrackPurchaseRequest> purchaseArgs = ArgumentCaptor.forClass(TrackPurchaseRequest.class);
+        Mockito.verify(extension.iterableService, Mockito.times(1)).trackPurchase(purchaseArgs.capture());
+        TrackPurchaseRequest trackPurchaseRequest = purchaseArgs.getValue();
+        assertEquals(trackPurchaseRequest.user.email, "mptest@mparticle.com");
+        assertEquals(trackPurchaseRequest.user.userId, "123456");
+        assertEquals(trackPurchaseRequest.items.size(), 2);
+        assertEquals(trackPurchaseRequest.total, new BigDecimal(101d));
     }
 }
