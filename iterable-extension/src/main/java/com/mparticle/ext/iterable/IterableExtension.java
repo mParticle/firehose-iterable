@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
 
 public class IterableExtension extends MessageProcessor {
 
-    public static final String NAME = "IterableExtension";
+    public static final String NAME = "Iterable";
     public static final String SETTING_API_KEY = "apiKey";
     public static final String SETTING_GCM_NAME_KEY = "gcmIntegrationName";
     public static final String SETTING_APNS_KEY = "apnsProdIntegrationName";
