@@ -158,12 +158,12 @@ public class IterableExtension extends MessageProcessor {
         Permissions permissions = new Permissions();
         permissions.setUserIdentities(
                 Arrays.asList(
-                        new UserIdentityPermission(UserIdentity.Type.EMAIL, Identity.Encoding.RAW),
+                        new UserIdentityPermission(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, true),
                         new UserIdentityPermission(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW)
                 )
         );
         response.setPermissions(permissions);
-        response.setDescription("Iterable Event and Segment Integration");
+        response.setDescription("Iterable makes consumer growth marketing and user engagement simple. With Iterable, marketers send the right message, to the right device, at the right time.");
         EventProcessingRegistration eventProcessingRegistration = new EventProcessingRegistration()
                 .setSupportedRuntimeEnvironments(
                         Arrays.asList(
