@@ -1,4 +1,4 @@
-# mParticle - Iterable Extension
+# mParticle - Iterable Firehose Integration
 
 This library integrates mParticle with [Iterable](https://www.iterable.com/), using [mParticle's Java SDK](https://github.com/mParticle/mparticle-sdk-java) over Amazon's [Lambda platform](https://aws.amazon.com/lambda/). 
 
