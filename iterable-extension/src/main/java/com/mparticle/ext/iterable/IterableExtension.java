@@ -58,6 +58,8 @@ public class IterableExtension extends MessageProcessor {
             throw new IOException("Cannot process push subscription event for unknown RuntimeEnvironment type.");
         }
 
+        request.device.token = event.getToken();
+
         try {
             UserIdentity email = event.getContext().getUserIdentities().stream().filter(t -> t.getType().equals(UserIdentity.Type.EMAIL))
                     .findFirst()
@@ -123,7 +125,13 @@ public class IterableExtension extends MessageProcessor {
                         .map(p -> convertToCommerceItem(p))
                         .collect(Collectors.toList());
             }
-            iterableService.trackPurchase(purchaseRequest);
+
+            Response<IterableApiResponse> response = iterableService.trackPurchase(purchaseRequest).execute();
+            if (response.isSuccess() && !response.body().isSuccess()) {
+                throw new IOException(response.body().toString());
+            } else if (!response.isSuccess()) {
+                throw new IOException("Error sending custom event to Iterable: HTTP " + response.code());
+            }
         }
     }
 
@@ -160,6 +168,12 @@ public class IterableExtension extends MessageProcessor {
                 Arrays.asList(
                         new UserIdentityPermission(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, true),
                         new UserIdentityPermission(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW)
+                )
+        );
+        permissions.setDeviceIdentities(
+                Arrays.asList(
+                        new DeviceIdentityPermission(DeviceIdentity.Type.GOOGLE_CLOUD_MESSAGING_TOKEN, Identity.Encoding.RAW),
+                        new DeviceIdentityPermission(DeviceIdentity.Type.APPLE_PUSH_NOTIFICATION_TOKEN, Identity.Encoding.RAW)
                 )
         );
         response.setPermissions(permissions);
