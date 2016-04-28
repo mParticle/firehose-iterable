@@ -43,8 +43,8 @@ public class IterableExtension extends MessageProcessor {
         RegisterDeviceTokenRequest request = new RegisterDeviceTokenRequest();
         request.device = new Device();
         if (event.getContext().getRuntimeEnvironment().getType().equals(RuntimeEnvironment.Type.IOS)) {
-            boolean sandboxed = ((IosRuntimeEnvironment) event.getContext().getRuntimeEnvironment()).getIsSandboxed();
-            if (sandboxed) {
+            Boolean sandboxed = ((IosRuntimeEnvironment) event.getContext().getRuntimeEnvironment()).getIsSandboxed();
+            if (sandboxed != null && sandboxed) {
                 request.device.platform = Device.PLATFORM_APNS_SANDBOX;
                 request.device.applicationName = event.getContext().getAccount().getAccountSettings().get(SETTING_APNS_SANDBOX_KEY);
             } else {
@@ -167,7 +167,7 @@ public class IterableExtension extends MessageProcessor {
         permissions.setUserIdentities(
                 Arrays.asList(
                         new UserIdentityPermission(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, true),
-                        new UserIdentityPermission(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW)
+                        new UserIdentityPermission(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, true)
                 )
         );
         permissions.setDeviceIdentities(
@@ -264,6 +264,7 @@ public class IterableExtension extends MessageProcessor {
             throw new IOException("Error sending custom event to Iterable: HTTP " + response.code());
         }
     }
+
 
     @Override
     public void processPushMessageReceiptEvent(PushMessageReceiptEvent event) throws IOException {
