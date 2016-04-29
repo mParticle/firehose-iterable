@@ -13,11 +13,11 @@ import java.io.OutputStream;
  * Sample AWS Lambda Endpoint
  */
 public class IterableLambdaEndpoint implements RequestStreamHandler {
+    MessageSerializer serializer = new MessageSerializer();
 
     @Override
     public void handleRequest(InputStream input, OutputStream output, Context context) throws IOException {
         IterableExtension processor = new IterableExtension();
-        MessageSerializer serializer = new MessageSerializer();
         Message request = serializer.deserialize(input, Message.class);
         Message response = processor.processMessage(request);
         serializer.serialize(output, response);
