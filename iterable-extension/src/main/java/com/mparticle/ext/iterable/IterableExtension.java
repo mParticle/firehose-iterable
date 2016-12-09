@@ -1,7 +1,7 @@
 package com.mparticle.ext.iterable;
 
-import com.amazonaws.util.json.JSONException;
-import com.amazonaws.util.json.JSONObject;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mparticle.iterable.*;
 import com.mparticle.sdk.MessageProcessor;
 import com.mparticle.sdk.model.audienceprocessing.Audience;
@@ -10,7 +10,6 @@ import com.mparticle.sdk.model.audienceprocessing.AudienceMembershipChangeRespon
 import com.mparticle.sdk.model.audienceprocessing.UserProfile;
 import com.mparticle.sdk.model.eventprocessing.*;
 import com.mparticle.sdk.model.registration.*;
-import org.apache.http.util.TextUtils;
 import retrofit.Response;
 
 import java.io.IOException;
@@ -88,7 +87,7 @@ public class IterableExtension extends MessageProcessor {
                     userUpdateRequest.userId = identity.getValue();
                 }
             }
-            if (!TextUtils.isEmpty(userUpdateRequest.email) || !TextUtils.isEmpty(userUpdateRequest.userId)) {
+            if (!isEmpty(userUpdateRequest.email) || !isEmpty(userUpdateRequest.userId)) {
                 userUpdateRequest.dataFields = context.getUserAttributes();
                 Response<IterableApiResponse> response = iterableService.userUpdate(userUpdateRequest).execute();
                 if (response.isSuccess()) {
@@ -99,6 +98,10 @@ public class IterableExtension extends MessageProcessor {
                 }
             }
         }
+    }
+
+    private static boolean isEmpty(CharSequence chars) {
+        return chars == null || "".equals(chars);
     }
 
     @Override
@@ -161,7 +164,7 @@ public class IterableExtension extends MessageProcessor {
 
     @Override
     public ModuleRegistrationResponse processRegistrationRequest(ModuleRegistrationRequest request) {
-        ModuleRegistrationResponse response = new ModuleRegistrationResponse(NAME, "1.0");
+        ModuleRegistrationResponse response = new ModuleRegistrationResponse(NAME, "1.1");
 
         Permissions permissions = new Permissions();
         permissions.setUserIdentities(
@@ -177,7 +180,7 @@ public class IterableExtension extends MessageProcessor {
                 )
         );
         response.setPermissions(permissions);
-        response.setDescription("Iterable makes consumer growth marketing and user engagement simple. With Iterable, marketers send the right message, to the right device, at the right time.");
+        response.setDescription("<a href=\"https://www.iterable.com\">Iterable</a> makes consumer growth marketing and user engagement simple. With Iterable, marketers send the right message, to the right device, at the right time.");
         EventProcessingRegistration eventProcessingRegistration = new EventProcessingRegistration()
                 .setSupportedRuntimeEnvironments(
                         Arrays.asList(
@@ -212,6 +215,7 @@ public class IterableExtension extends MessageProcessor {
                         .setDescription("APNS Production integration name set up in the Mobile Push section of your Iterable account.")
         );
         eventProcessingRegistration.setAccountSettings(eventSettings);
+        
 
         // Specify supported event types
         List<Event.Type> supportedEventTypes = Arrays.asList(
@@ -281,22 +285,18 @@ public class IterableExtension extends MessageProcessor {
             if (request.email == null && request.userId == null) {
                 throw new IOException("Unable to process PushMessageReceiptEvent - user has no email or customer id.");
             }
-            try {
-                JSONObject payload = new JSONObject(event.getPayload());
-                if (payload.has("itbl")) {
-                    JSONObject iterableObject = payload.getJSONObject("itbl");
-                    request.campaignId = iterableObject.optInt("campaignId");
-                    request.templateId = iterableObject.optInt("templateId");
-                    request.createdAt = (int) (event.getTimestamp() / 1000.0);
-                    Response<IterableApiResponse> response = iterableService.trackPushOpen(request).execute();
-                    if (response.isSuccess() && !response.body().isSuccess()) {
-                        throw new IOException(response.body().toString());
-                    } else if (!response.isSuccess()) {
-                        throw new IOException("Error sending push-open to Iterable: HTTP " + response.code());
-                    }
+            ObjectMapper mapper = new ObjectMapper();
+            Map<String, Object> payload = mapper.readValue(event.getPayload(), Map.class);
+            if (payload.containsKey("itbl")) {
+                request.campaignId = Integer.parseInt(mapper.writeValueAsString(((Map)payload.get("itbl")).get("campaignId")));
+                request.templateId = Integer.parseInt(mapper.writeValueAsString(((Map)payload.get("itbl")).get("templateId")));
+                request.createdAt = (int) (event.getTimestamp() / 1000.0);
+                Response<IterableApiResponse> response = iterableService.trackPushOpen(request).execute();
+                if (response.isSuccess() && !response.body().isSuccess()) {
+                    throw new IOException(response.body().toString());
+                } else if (!response.isSuccess()) {
+                    throw new IOException("Error sending push-open to Iterable: HTTP " + response.code());
                 }
-            } catch (JSONException jse) {
-                throw new IOException(jse);
             }
         }
     }

@@ -1,6 +1,6 @@
 package com.mparticle.ext.iterable;
 
-import com.amazonaws.util.json.JSONObject;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mparticle.iterable.*;
 import com.mparticle.sdk.model.audienceprocessing.Audience;
 import com.mparticle.sdk.model.audienceprocessing.AudienceMembershipChangeRequest;
@@ -133,7 +133,7 @@ public class IterableExtensionTest {
         assertTrue("Iterable should support user attribute changes", eventTypes.contains(Event.Type.USER_ATTRIBUTE_CHANGE));
         assertTrue("Iterable should support user identity changes", eventTypes.contains(Event.Type.USER_IDENTITY_CHANGE));
 
-        Setting setting = response.getAudienceProcessingRegistration().getAudienceSubscriptionSettings().get(0);
+        Setting setting = response.getAudienceProcessingRegistration().getAudienceConnectionSettings().get(0);
         assertTrue("Iterable audiences should have a single Integer setting", setting.getType().equals(Setting.Type.INTEGER));
     }
 
@@ -214,12 +214,8 @@ public class IterableExtensionTest {
         userIdentities.add(new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "123456"));
         eventProcessingRequest.setUserIdentities(userIdentities);
         event.setContext(new Event.Context(eventProcessingRequest));
-        JSONObject iterableObject = new JSONObject();
-        iterableObject.put("campaignId", 12345);
-        iterableObject.put("templateId", 54321);
-        JSONObject payload = new JSONObject();
-        payload.put("itbl", iterableObject);
-        event.setPayload(payload.toString());
+
+        event.setPayload("{\"itbl\":{\"campaignId\":12345, \"templateId\":54321}}");
 
         long timeStamp = System.currentTimeMillis();
         event.setTimestamp(timeStamp);
