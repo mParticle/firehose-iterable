@@ -387,7 +387,7 @@ public class IterableExtension extends MessageProcessor {
     public void processCustomEvent(CustomEvent event) throws IOException {
         TrackRequest request = new TrackRequest(event.getName());
         request.createdAt = (int) (event.getTimestamp() / 1000.0);
-        request.dataFields = event.getAttributes();
+        request.dataFields = attemptTypeConversion(event.getAttributes());
         List<UserIdentity> identities = event.getContext().getUserIdentities();
         if (identities != null) {
             for (UserIdentity identity : identities) {
@@ -408,6 +408,44 @@ public class IterableExtension extends MessageProcessor {
         } else if (!response.isSuccess()) {
             throw new IOException("Error sending custom event to Iterable: HTTP " + response.code());
         }
+    }
+
+    /**
+     * Make a best-effort attempt to coerce the values of each map item to bool, double, int, and string types
+     *
+     * mParticle's API only accepts string, whereas Iterable's API accept different types. By coercing these types,
+     * users of the Iterable API are able to create campaigns, aggregate events, etc.
+     *
+     * @param attributes
+     * @return
+     */
+    private Map<String, Object> attemptTypeConversion(Map<String, String> attributes) {
+        if (attributes == null) {
+            return null;
+        }
+        Map<String, Object> converted = new HashMap<>(attributes.size());
+        attributes.forEach((key,value)-> {
+            if (isEmpty(value)) {
+                converted.put(key, value);
+            } else {
+                if (value.toLowerCase(Locale.US).equals("true") || value.toLowerCase(Locale.US).equals("false")) {
+                    converted.put(key, Boolean.parseBoolean(value));
+                } else {
+                    try {
+                        double doubleValue = Double.parseDouble(value);
+                        if ((doubleValue % 1) == 0) {
+                            converted.put(key, Integer.parseInt(value));
+                        } else {
+                            converted.put(key, doubleValue);
+                        }
+                    }catch (NumberFormatException nfe) {
+                        converted.put(key, value);
+                    }
+                }
+            }
+
+        });
+        return converted;
     }
 
 
