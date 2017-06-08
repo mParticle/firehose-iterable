@@ -1,6 +1,5 @@
 package com.mparticle.ext.iterable;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mparticle.iterable.*;
 import com.mparticle.sdk.model.audienceprocessing.Audience;
 import com.mparticle.sdk.model.audienceprocessing.AudienceMembershipChangeRequest;
@@ -30,7 +29,23 @@ public class IterableExtensionTest {
     public void testProcessEventProcessingRequest() throws Exception {
         IterableExtension extension = new IterableExtension();
         EventProcessingRequest request = new EventProcessingRequest();
-        request.setEvents(new LinkedList<>());
+        List<Event> events = new LinkedList<>();
+        Event customEvent1 = new UserAttributeChangeEvent();
+        customEvent1.setTimestamp(3);
+        Event customEvent2 = new UserAttributeChangeEvent();
+        customEvent2.setTimestamp(2);
+        Event customEvent3 = new UserAttributeChangeEvent();
+        customEvent3.setTimestamp(1);
+        Event customEvent4 = new UserAttributeChangeEvent();
+        customEvent4.setTimestamp(4);
+        request.setDeviceApplicationStamp("foo");
+        //out of order
+        events.add(customEvent1);
+        events.add(customEvent2);
+        events.add(customEvent3);
+        events.add(customEvent4);
+
+        request.setEvents(events);
         Account account = new Account();
         HashMap<String, String> settings = new HashMap<String, String>();
         settings.put(IterableExtension.SETTING_API_KEY, "cool api key");
@@ -38,6 +53,11 @@ public class IterableExtensionTest {
         request.setAccount(account);
         extension.processEventProcessingRequest(request);
         assertNotNull("IterableService should have been created", extension.iterableService);
+
+        assertEquals("Events should have been in order",1, request.getEvents().get(0).getTimestamp());
+        assertEquals("Events should have been in order",2, request.getEvents().get(1).getTimestamp());
+        assertEquals("Events should have been in order",3, request.getEvents().get(2).getTimestamp());
+        assertEquals("Events should have been in order",4, request.getEvents().get(3).getTimestamp());
     }
 
     @org.junit.Test
@@ -54,7 +74,7 @@ public class IterableExtensionTest {
         EventProcessingRequest request = new EventProcessingRequest();
 
         //no user identities, no API call
-        extension.updateUser(new Event.Context(request));
+        extension.updateUser(request);
         UserUpdateRequest userUpdateRequest = new UserUpdateRequest();
         Mockito.verify(extension.iterableService, Mockito.never()).userUpdate(userUpdateRequest);
 
@@ -62,7 +82,7 @@ public class IterableExtensionTest {
         List<UserIdentity> identities = new LinkedList<>();
         identities.add(new UserIdentity(UserIdentity.Type.FACEBOOK, Identity.Encoding.RAW, "123456"));
         request.setUserIdentities(identities);
-        extension.updateUser(new Event.Context(request));
+        extension.updateUser(request);
         Mockito.verify(extension.iterableService, Mockito.never()).userUpdate(userUpdateRequest);
 
         //ok, now we should get a single API call
@@ -73,7 +93,7 @@ public class IterableExtensionTest {
         request.setUserAttributes(userAttributes);
         request.setUserIdentities(identities);
 
-        extension.updateUser(new Event.Context(request));
+        extension.updateUser(request);
 
         ArgumentCaptor<UserUpdateRequest> argument = ArgumentCaptor.forClass(UserUpdateRequest.class);
         Mockito.verify(extension.iterableService).userUpdate(argument.capture());
@@ -85,7 +105,7 @@ public class IterableExtensionTest {
 
         IOException exception = null;
         try {
-            extension.updateUser(new Event.Context(request));
+            extension.updateUser(request);
         } catch (IOException ioe) {
             exception = ioe;
         }

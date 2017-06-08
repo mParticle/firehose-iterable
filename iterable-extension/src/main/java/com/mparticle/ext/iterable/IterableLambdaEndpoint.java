@@ -1,6 +1,7 @@
 package com.mparticle.ext.iterable;
 
 import com.amazonaws.services.lambda.runtime.Context;
+import com.amazonaws.services.lambda.runtime.LambdaLogger;
 import com.amazonaws.services.lambda.runtime.RequestStreamHandler;
 import com.mparticle.sdk.model.Message;
 import com.mparticle.sdk.model.MessageSerializer;
@@ -9,10 +10,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
-/**
- * Sample AWS Lambda Endpoint
- */
+
 public class IterableLambdaEndpoint implements RequestStreamHandler {
+
     MessageSerializer serializer = new MessageSerializer();
 
     @Override
