@@ -33,6 +33,9 @@ public interface IterableService {
     @POST("api/users/update")
     Call<IterableApiResponse> userUpdate(@Body UserUpdateRequest trackRequest);
 
+    @POST("api/users/updateEmail")
+    Call<IterableApiResponse> updateEmail(@Body UpdateEmailRequest updateEmailRequest);
+
     @POST("api/users/registerDeviceToken")
     Call<IterableApiResponse> registerToken(@Body RegisterDeviceTokenRequest registerRequest);
 

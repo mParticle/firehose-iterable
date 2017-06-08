@@ -15,6 +15,7 @@ import retrofit.Response;
 import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public class IterableExtension extends MessageProcessor {
 
@@ -33,13 +34,41 @@ public class IterableExtension extends MessageProcessor {
             String apiKey = account.getStringSetting(SETTING_API_KEY, true, null);
             iterableService = IterableService.newInstance(apiKey);
         }
-        updateUser(new Event.Context(request));
+        Collections.sort(
+                request.getEvents(),
+                (a, b) -> a.getTimestamp() > b.getTimestamp() ? 1 : a.getTimestamp() == b.getTimestamp() ? 0 : -1
+        );
+        insertPlaceholderEmail(request);
+        updateUser(request);
         return super.processEventProcessingRequest(request);
+    }
+
+    /**
+     * Verify that there's an email present, create a placeholder if not.
+     *
+     * @param request
+     * @throws IOException
+     */
+    private void insertPlaceholderEmail(EventProcessingRequest request) throws IOException {
+        long count = request.getUserIdentities() == null ? 0 : request.getUserIdentities().stream()
+                .filter(t -> t.getType().equals(UserIdentity.Type.EMAIL))
+                .count();
+        if (count > 0) {
+            return;
+        }
+        String placeholderEmail = getPlaceholderEmail(request);
+        if (request.getUserIdentities() == null) {
+            request.setUserIdentities(new ArrayList<>());
+        }
+        request.getUserIdentities().add(new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, placeholderEmail));
     }
 
     @Override
     public void processPushSubscriptionEvent(PushSubscriptionEvent event) throws IOException {
         RegisterDeviceTokenRequest request = new RegisterDeviceTokenRequest();
+        if (PushSubscriptionEvent.Action.UNSUBSCRIBE.equals(event.getAction())) {
+            return;
+        }
         request.device = new Device();
         if (event.getContext().getRuntimeEnvironment().getType().equals(RuntimeEnvironment.Type.IOS)) {
             Boolean sandboxed = ((IosRuntimeEnvironment) event.getContext().getRuntimeEnvironment()).getIsSandboxed();
@@ -60,9 +89,11 @@ public class IterableExtension extends MessageProcessor {
         request.device.token = event.getToken();
 
         try {
-            UserIdentity email = event.getContext().getUserIdentities().stream().filter(t -> t.getType().equals(UserIdentity.Type.EMAIL))
+            UserIdentity email = event.getContext().getUserIdentities().stream()
+                    .filter(t -> t.getType().equals(UserIdentity.Type.EMAIL))
                     .findFirst()
                     .get();
+
             request.email = email.getValue();
         } catch (NoSuchElementException e) {
             throw new IOException("Unable to construct Iterable RegisterDeviceTokenRequest - no user email.");
@@ -76,7 +107,59 @@ public class IterableExtension extends MessageProcessor {
         }
     }
 
-    void updateUser(Event.Context context) throws IOException {
+    void updateUser(EventProcessingRequest request) throws IOException {
+        Event.Context context = new Event.Context(request);
+
+        if (request.getEvents() != null) {
+            Stream<UserIdentityChangeEvent> stream = request.getEvents().stream()
+                    .filter(e -> e.getType() == Event.Type.USER_IDENTITY_CHANGE)
+                    .map(e -> (UserIdentityChangeEvent) e);
+
+            List<UserIdentityChangeEvent> emailChangeEvents = stream.filter(e -> e.getAdded() != null && e.getRemoved() != null)
+                    .filter(e -> e.getAdded().size() > 0 && e.getRemoved().size() > 0)
+                    .filter(e -> e.getAdded().get(0).getType().equals(UserIdentity.Type.EMAIL))
+                    .filter(e -> !isEmpty(e.getAdded().get(0).getValue()) && !isEmpty(e.getRemoved().get(0).getValue()))
+                    .collect(Collectors.toList());
+
+            List<UserIdentityChangeEvent> emailAddedEvents = stream.filter(e -> e.getAdded() != null && e.getAdded().size() > 0)
+                    .filter(e -> e.getRemoved() == null || e.getRemoved().size() == 0)
+                    .filter(e -> e.getAdded().get(0).getType().equals(UserIdentity.Type.EMAIL))
+                    .filter(e -> !isEmpty(e.getAdded().get(0).getValue()))
+                    .collect(Collectors.toList());
+
+            String placeholderEmail = getPlaceholderEmail(request);
+            //convert from placeholder to email now that we have one
+            for (UserIdentityChangeEvent changeEvent : emailAddedEvents) {
+
+                UpdateEmailRequest updateEmailRequest = new UpdateEmailRequest();
+                updateEmailRequest.currentEmail = placeholderEmail;
+                //this is safe due to the filters above
+                updateEmailRequest.newEmail = changeEvent.getAdded().get(0).getValue();
+                Response<IterableApiResponse> response = iterableService.updateEmail(updateEmailRequest).execute();
+                if (response.isSuccess()) {
+                    IterableApiResponse apiResponse = response.body();
+                    if (apiResponse != null && !apiResponse.isSuccess()) {
+                        throw new IOException("Error while calling updateEmail() on iterable: HTTP " + apiResponse.code);
+                    }
+                }
+            }
+
+            //convert from old to new email
+            for (UserIdentityChangeEvent changeEvent : emailChangeEvents) {
+                UpdateEmailRequest updateEmailRequest = new UpdateEmailRequest();
+                //these are safe due to the filters above
+                updateEmailRequest.currentEmail = changeEvent.getRemoved().get(0).getValue();
+                updateEmailRequest.newEmail = changeEvent.getAdded().get(0).getValue();
+                Response<IterableApiResponse> response = iterableService.updateEmail(updateEmailRequest).execute();
+                if (response.isSuccess()) {
+                    IterableApiResponse apiResponse = response.body();
+                    if (apiResponse != null && !apiResponse.isSuccess()) {
+                        throw new IOException("Error while calling updateEmail() on iterable: HTTP " + apiResponse.code);
+                    }
+                }
+            }
+        }
+
         List<UserIdentity> identities = context.getUserIdentities();
         UserUpdateRequest userUpdateRequest = new UserUpdateRequest();
         if (identities != null) {
@@ -93,7 +176,7 @@ public class IterableExtension extends MessageProcessor {
                 if (response.isSuccess()) {
                     IterableApiResponse apiResponse = response.body();
                     if (apiResponse != null && !apiResponse.isSuccess()) {
-                        throw new IOException(apiResponse.toString());
+                        throw new IOException("Error while calling updateUser() on iterable: HTTP " + apiResponse.code);
                     }
                 }
             }
@@ -162,23 +245,80 @@ public class IterableExtension extends MessageProcessor {
         //updateUser(event.getContext());
     }
 
+    /**
+     * Make the best attempt at creating a placeholder email, prioritize:
+     *  1. device application stamp
+     *  2. device ID
+     *  3. customer Id
+     * @param request
+     * @return
+     */
+    private static String getPlaceholderEmail(EventProcessingRequest request) throws IOException {
+        // https://support.iterable.com/hc/en-us/articles/208499956-Creating-user-profiles-without-an-email-address
+        String id = request.getDeviceApplicationStamp();
+        if (isEmpty(id)) {
+            if (request.getRuntimeEnvironment() instanceof IosRuntimeEnvironment) {
+                DeviceIdentity deviceIdentity = ((IosRuntimeEnvironment)request.getRuntimeEnvironment()).getIdentities() == null ? null : ((IosRuntimeEnvironment)request.getRuntimeEnvironment()).getIdentities().stream().filter(t -> t.getType().equals(DeviceIdentity.Type.IOS_VENDOR_ID))
+                        .findFirst()
+                        .get();
+                if (deviceIdentity != null) {
+                    id = deviceIdentity.getValue();
+                }
+            } else if (request.getRuntimeEnvironment() instanceof TVOSRuntimeEnvironment) {
+                DeviceIdentity deviceIdentity = ((TVOSRuntimeEnvironment)request.getRuntimeEnvironment()).getIdentities() == null ? null : ((TVOSRuntimeEnvironment)request.getRuntimeEnvironment()).getIdentities().stream().filter(t -> t.getType().equals(DeviceIdentity.Type.IOS_VENDOR_ID))
+                        .findFirst()
+                        .get();
+                if (deviceIdentity != null) {
+                    id = deviceIdentity.getValue();
+                }
+            } else if (request.getRuntimeEnvironment() instanceof AndroidRuntimeEnvironment) {
+                DeviceIdentity deviceIdentity = ((AndroidRuntimeEnvironment)request.getRuntimeEnvironment()).getIdentities() == null ? null : ((AndroidRuntimeEnvironment)request.getRuntimeEnvironment()).getIdentities().stream().filter(t -> t.getType().equals(DeviceIdentity.Type.ANDROID_ID))
+                        .findFirst()
+                        .get();
+                if (deviceIdentity != null) {
+                    id = deviceIdentity.getValue();
+                }
+            }
+        }
+        if (isEmpty(id)) {
+            if (request.getUserIdentities() != null) {
+                UserIdentity customerId = request.getUserIdentities().stream()
+                        .filter(t -> t.getType().equals(UserIdentity.Type.CUSTOMER))
+                        .findFirst()
+                        .get();
+                if (customerId != null) {
+                    id = customerId.getValue();
+                }
+            }
+        }
+
+        if (isEmpty(id)) {
+            throw new IOException("Unable to send user to Iterable - no email and unable to construct placeholder.");
+        }
+        return id + "@placeholder.email";
+    }
+
     @Override
     public ModuleRegistrationResponse processRegistrationRequest(ModuleRegistrationRequest request) {
-        ModuleRegistrationResponse response = new ModuleRegistrationResponse(NAME, "1.1");
+        ModuleRegistrationResponse response = new ModuleRegistrationResponse(NAME, "1.2");
 
         Permissions permissions = new Permissions();
         permissions.setUserIdentities(
                 Arrays.asList(
-                        new UserIdentityPermission(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, true),
-                        new UserIdentityPermission(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, true)
+                        new UserIdentityPermission(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, false),
+                        new UserIdentityPermission(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, false)
                 )
         );
         permissions.setDeviceIdentities(
                 Arrays.asList(
                         new DeviceIdentityPermission(DeviceIdentity.Type.GOOGLE_CLOUD_MESSAGING_TOKEN, Identity.Encoding.RAW),
-                        new DeviceIdentityPermission(DeviceIdentity.Type.APPLE_PUSH_NOTIFICATION_TOKEN, Identity.Encoding.RAW)
+                        new DeviceIdentityPermission(DeviceIdentity.Type.APPLE_PUSH_NOTIFICATION_TOKEN, Identity.Encoding.RAW),
+                        new DeviceIdentityPermission(DeviceIdentity.Type.IOS_VENDOR_ID, Identity.Encoding.RAW),
+                        new DeviceIdentityPermission(DeviceIdentity.Type.ANDROID_ID, Identity.Encoding.RAW),
+                        new DeviceIdentityPermission(DeviceIdentity.Type.GOOGLE_ADVERTISING_ID, Identity.Encoding.RAW)
                 )
         );
+        permissions.setAllowAccessDeviceApplicationStamp(true);
         response.setPermissions(permissions);
         response.setDescription("<a href=\"https://www.iterable.com\">Iterable</a> makes consumer growth marketing and user engagement simple. With Iterable, marketers send the right message, to the right device, at the right time.");
         EventProcessingRegistration eventProcessingRegistration = new EventProcessingRegistration()
@@ -215,7 +355,6 @@ public class IterableExtension extends MessageProcessor {
                         .setDescription("APNS Production integration name set up in the Mobile Push section of your Iterable account.")
         );
         eventProcessingRegistration.setAccountSettings(eventSettings);
-        
 
         // Specify supported event types
         List<Event.Type> supportedEventTypes = Arrays.asList(
@@ -228,7 +367,6 @@ public class IterableExtension extends MessageProcessor {
 
         eventProcessingRegistration.setSupportedEventTypes(supportedEventTypes);
         response.setEventProcessingRegistration(eventProcessingRegistration);
-
         AudienceProcessingRegistration audienceRegistration = new AudienceProcessingRegistration();
         audienceRegistration.setAccountSettings(audienceSettings);
         List<Setting> subscriptionSettings = new LinkedList<>();
