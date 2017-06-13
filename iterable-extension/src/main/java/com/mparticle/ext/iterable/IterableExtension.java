@@ -15,7 +15,6 @@ import retrofit.Response;
 import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 public class IterableExtension extends MessageProcessor {
 
@@ -249,50 +248,74 @@ public class IterableExtension extends MessageProcessor {
     }
 
     /**
+     *
      * Make the best attempt at creating a placeholder email, prioritize:
-     *  1. device application stamp
-     *  2. device ID
+     *  1. Platform respective device IDs
      *  3. customer Id
+     *  3. device application stamp
      * @param request
      * @return
+     *
+     * Also see: https://support.iterable.com/hc/en-us/articles/208499956-Creating-user-profiles-without-an-email-address
      */
-    private static String getPlaceholderEmail(EventProcessingRequest request) throws IOException {
-        // https://support.iterable.com/hc/en-us/articles/208499956-Creating-user-profiles-without-an-email-address
-        String id = request.getDeviceApplicationStamp();
-        if (isEmpty(id)) {
+    static String getPlaceholderEmail(EventProcessingRequest request) throws IOException {
+        String id = null;
+        if (request.getRuntimeEnvironment() instanceof IosRuntimeEnvironment || request.getRuntimeEnvironment() instanceof TVOSRuntimeEnvironment ) {
+            List<DeviceIdentity> deviceIdentities = null;
             if (request.getRuntimeEnvironment() instanceof IosRuntimeEnvironment) {
-                DeviceIdentity deviceIdentity = ((IosRuntimeEnvironment)request.getRuntimeEnvironment()).getIdentities() == null ? null : ((IosRuntimeEnvironment)request.getRuntimeEnvironment()).getIdentities().stream().filter(t -> t.getType().equals(DeviceIdentity.Type.IOS_VENDOR_ID))
+                deviceIdentities = ((IosRuntimeEnvironment) request.getRuntimeEnvironment()).getIdentities();
+            } else {
+                deviceIdentities = ((TVOSRuntimeEnvironment) request.getRuntimeEnvironment()).getIdentities();
+            }
+            if (deviceIdentities != null) {
+                DeviceIdentity deviceIdentity = deviceIdentities.stream().filter(t -> t.getType().equals(DeviceIdentity.Type.IOS_VENDOR_ID))
                         .findFirst()
-                        .get();
+                        .orElse(null);
                 if (deviceIdentity != null) {
                     id = deviceIdentity.getValue();
                 }
-            } else if (request.getRuntimeEnvironment() instanceof TVOSRuntimeEnvironment) {
-                DeviceIdentity deviceIdentity = ((TVOSRuntimeEnvironment)request.getRuntimeEnvironment()).getIdentities() == null ? null : ((TVOSRuntimeEnvironment)request.getRuntimeEnvironment()).getIdentities().stream().filter(t -> t.getType().equals(DeviceIdentity.Type.IOS_VENDOR_ID))
+                if (isEmpty(id)) {
+                    deviceIdentity = deviceIdentities.stream().filter(t -> t.getType().equals(DeviceIdentity.Type.IOS_ADVERTISING_ID))
+                            .findFirst()
+                            .orElse(null);
+                    if (deviceIdentity != null) {
+                        id = deviceIdentity.getValue();
+                    }
+                }
+            }
+        } else if (request.getRuntimeEnvironment() instanceof AndroidRuntimeEnvironment) {
+            if (((AndroidRuntimeEnvironment)request.getRuntimeEnvironment()).getIdentities() != null) {
+                DeviceIdentity deviceIdentity = ((AndroidRuntimeEnvironment)request.getRuntimeEnvironment()).getIdentities().stream().filter(t -> t.getType().equals(DeviceIdentity.Type.GOOGLE_ADVERTISING_ID))
                         .findFirst()
-                        .get();
+                        .orElse(null);
                 if (deviceIdentity != null) {
                     id = deviceIdentity.getValue();
                 }
-            } else if (request.getRuntimeEnvironment() instanceof AndroidRuntimeEnvironment) {
-                DeviceIdentity deviceIdentity = ((AndroidRuntimeEnvironment)request.getRuntimeEnvironment()).getIdentities() == null ? null : ((AndroidRuntimeEnvironment)request.getRuntimeEnvironment()).getIdentities().stream().filter(t -> t.getType().equals(DeviceIdentity.Type.ANDROID_ID))
-                        .findFirst()
-                        .get();
-                if (deviceIdentity != null) {
-                    id = deviceIdentity.getValue();
+                if (isEmpty(id)) {
+                    deviceIdentity = ((AndroidRuntimeEnvironment) request.getRuntimeEnvironment()).getIdentities().stream().filter(t -> t.getType().equals(DeviceIdentity.Type.ANDROID_ID))
+                            .findFirst()
+                            .orElse(null);
+                    if (deviceIdentity != null) {
+                        id = deviceIdentity.getValue();
+                    }
                 }
             }
         }
+
         if (isEmpty(id)) {
             if (request.getUserIdentities() != null) {
                 UserIdentity customerId = request.getUserIdentities().stream()
                         .filter(t -> t.getType().equals(UserIdentity.Type.CUSTOMER))
                         .findFirst()
-                        .get();
+                        .orElse(null);
                 if (customerId != null) {
                     id = customerId.getValue();
                 }
             }
+        }
+
+        if (isEmpty(id)) {
+            id = request.getDeviceApplicationStamp();
         }
 
         if (isEmpty(id)) {
@@ -318,6 +341,7 @@ public class IterableExtension extends MessageProcessor {
                         new DeviceIdentityPermission(DeviceIdentity.Type.APPLE_PUSH_NOTIFICATION_TOKEN, Identity.Encoding.RAW),
                         new DeviceIdentityPermission(DeviceIdentity.Type.IOS_VENDOR_ID, Identity.Encoding.RAW),
                         new DeviceIdentityPermission(DeviceIdentity.Type.ANDROID_ID, Identity.Encoding.RAW),
+                        new DeviceIdentityPermission(DeviceIdentity.Type.IOS_ADVERTISING_ID, Identity.Encoding.RAW),
                         new DeviceIdentityPermission(DeviceIdentity.Type.GOOGLE_ADVERTISING_ID, Identity.Encoding.RAW)
                 )
         );

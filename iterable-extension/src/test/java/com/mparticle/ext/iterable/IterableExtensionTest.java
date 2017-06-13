@@ -9,6 +9,7 @@ import com.mparticle.sdk.model.registration.Account;
 import com.mparticle.sdk.model.registration.ModuleRegistrationResponse;
 import com.mparticle.sdk.model.registration.Setting;
 import com.mparticle.sdk.model.registration.UserIdentityPermission;
+import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import retrofit.Call;
@@ -16,10 +17,7 @@ import retrofit.Response;
 
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 import static org.junit.Assert.*;
 
@@ -447,5 +445,107 @@ public class IterableExtensionTest {
         assertEquals(trackPurchaseRequest.user.userId, "123456");
         assertEquals(trackPurchaseRequest.items.size(), 2);
         assertEquals(trackPurchaseRequest.total, new BigDecimal(101d));
+    }
+
+    @Test
+    public void testGetPlaceholderEmailNoEnvironmentOrStamp() throws Exception {
+        EventProcessingRequest request = new EventProcessingRequest();
+        request.setRuntimeEnvironment(null);
+        request.setDeviceApplicationStamp(null);
+        Exception e = null;
+        try {
+            String email = IterableExtension.getPlaceholderEmail(request);
+        }catch (IOException ioe) {
+            e = ioe;
+        }
+        assertNotNull(e);
+    }
+
+    @Test
+    public void testGetPlaceholderEmailNoEnvironment() throws Exception {
+        EventProcessingRequest request = new EventProcessingRequest();
+        request.setRuntimeEnvironment(null);
+        request.setDeviceApplicationStamp("1234");
+        String email = IterableExtension.getPlaceholderEmail(request);
+        assertEquals("1234@placeholder.email", email);
+    }
+
+    @Test
+    public void testGetPlaceholderEmailEnvironmentButNoIds() throws Exception {
+        EventProcessingRequest request = new EventProcessingRequest();
+        request.setRuntimeEnvironment(new AndroidRuntimeEnvironment());
+        request.setDeviceApplicationStamp("1234");
+        String email = IterableExtension.getPlaceholderEmail(request);
+        assertEquals("1234@placeholder.email", email);
+
+        request = new EventProcessingRequest();
+        request.setRuntimeEnvironment(new IosRuntimeEnvironment());
+        request.setDeviceApplicationStamp("12345");
+        email = IterableExtension.getPlaceholderEmail(request);
+        assertEquals("12345@placeholder.email", email);
+
+        request = new EventProcessingRequest();
+        request.setRuntimeEnvironment(new TVOSRuntimeEnvironment());
+        request.setDeviceApplicationStamp("123456");
+        email = IterableExtension.getPlaceholderEmail(request);
+        assertEquals("123456@placeholder.email", email);
+    }
+
+    @Test
+    public void testGetPlaceholderEmailEnvironmentIDFA() throws Exception {
+        EventProcessingRequest request = new EventProcessingRequest();
+        request.setRuntimeEnvironment(new IosRuntimeEnvironment());
+        DeviceIdentity idfa = new DeviceIdentity(DeviceIdentity.Type.IOS_ADVERTISING_ID, Identity.Encoding.RAW, "foo-idfa");
+        ((IosRuntimeEnvironment)request.getRuntimeEnvironment()).setIdentities(Arrays.asList(idfa));
+        request.setDeviceApplicationStamp("1234");
+        String email = IterableExtension.getPlaceholderEmail(request);
+        assertEquals("foo-idfa@placeholder.email", email);
+
+        request.setRuntimeEnvironment(new TVOSRuntimeEnvironment());
+        ((TVOSRuntimeEnvironment)request.getRuntimeEnvironment()).setIdentities(Arrays.asList(idfa));
+        request.setDeviceApplicationStamp("1234");
+        email = IterableExtension.getPlaceholderEmail(request);
+        assertEquals("foo-idfa@placeholder.email", email);
+    }
+
+    @Test
+    public void testGetPlaceholderEmailEnvironmentIDFV() throws Exception {
+        EventProcessingRequest request = new EventProcessingRequest();
+        request.setRuntimeEnvironment(new IosRuntimeEnvironment());
+        DeviceIdentity idfv = new DeviceIdentity(DeviceIdentity.Type.IOS_VENDOR_ID, Identity.Encoding.RAW, "foo-idfv");
+        DeviceIdentity idfa = new DeviceIdentity(DeviceIdentity.Type.IOS_ADVERTISING_ID, Identity.Encoding.RAW, "foo-idfa");
+        ((IosRuntimeEnvironment)request.getRuntimeEnvironment()).setIdentities(Arrays.asList(idfa, idfv));
+        request.setDeviceApplicationStamp("1234");
+        String email = IterableExtension.getPlaceholderEmail(request);
+        assertEquals("foo-idfv@placeholder.email", email);
+
+        request.setRuntimeEnvironment(new TVOSRuntimeEnvironment());
+        ((TVOSRuntimeEnvironment)request.getRuntimeEnvironment()).setIdentities(Arrays.asList(idfa, idfv));
+        request.setDeviceApplicationStamp("1234");
+        email = IterableExtension.getPlaceholderEmail(request);
+        assertEquals("foo-idfv@placeholder.email", email);
+    }
+
+    @Test
+    public void testGetPlaceholderEmailEnvironmentGAID() throws Exception {
+        EventProcessingRequest request = new EventProcessingRequest();
+        request.setRuntimeEnvironment(new AndroidRuntimeEnvironment());
+        DeviceIdentity idfv = new DeviceIdentity(DeviceIdentity.Type.ANDROID_ID, Identity.Encoding.RAW, "foo-aid");
+        DeviceIdentity idfa = new DeviceIdentity(DeviceIdentity.Type.GOOGLE_ADVERTISING_ID, Identity.Encoding.RAW, "foo-gaid");
+        ((AndroidRuntimeEnvironment)request.getRuntimeEnvironment()).setIdentities(Arrays.asList(idfa, idfv));
+        request.setDeviceApplicationStamp("1234");
+        String email = IterableExtension.getPlaceholderEmail(request);
+        assertEquals("foo-gaid@placeholder.email", email);
+    }
+
+    @Test
+    public void testGetPlaceholderEmailEnvironmentAndroidID() throws Exception {
+        EventProcessingRequest request = new EventProcessingRequest();
+        request.setRuntimeEnvironment(new AndroidRuntimeEnvironment());
+        DeviceIdentity idfv = new DeviceIdentity(DeviceIdentity.Type.ANDROID_ID, Identity.Encoding.RAW, "foo-aid");
+        ((AndroidRuntimeEnvironment)request.getRuntimeEnvironment()).setIdentities(Arrays.asList(idfv));
+        request.setDeviceApplicationStamp("1234");
+        String email = IterableExtension.getPlaceholderEmail(request);
+        assertEquals("foo-aid@placeholder.email", email);
     }
 }
