@@ -233,7 +233,7 @@ public class IterableExtensionTest {
         eventProcessingRequest.setUserIdentities(userIdentities);
         event.setContext(new Event.Context(eventProcessingRequest));
 
-        event.setPayload("{\"itbl\":{\"campaignId\":12345, \"templateId\":54321}}");
+        event.setPayload("{\"itbl\":{\"campaignId\":12345, \"templateId\":54321, \"messageId\":\"1dce4e505b11111ca1111d6fdd774fbd\"}}");
 
         long timeStamp = System.currentTimeMillis();
         event.setTimestamp(timeStamp);
@@ -246,6 +246,7 @@ public class IterableExtensionTest {
         assertEquals("123456", argument.getValue().userId);
         assertEquals(12345, argument.getValue().campaignId + 0);
         assertEquals(54321, argument.getValue().templateId + 0);
+        assertEquals("1dce4e505b11111ca1111d6fdd774fbd", argument.getValue().messageId);
 
 
         apiResponse.code = "anything but success";
