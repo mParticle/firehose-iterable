@@ -246,7 +246,7 @@ public class IterableExtensionTest {
         assertEquals("123456", argument.getValue().userId);
         assertEquals(12345, argument.getValue().campaignId + 0);
         assertEquals(54321, argument.getValue().templateId + 0);
-        assertEquals("1dce4e505b11111ca1111d6fdd774fbd", argument.getValue().messageId);
+        assertEquals("\"1dce4e505b11111ca1111d6fdd774fbd\"", argument.getValue().messageId);
 
 
         apiResponse.code = "anything but success";
