@@ -493,6 +493,7 @@ public class IterableExtension extends MessageProcessor {
             if (payload.containsKey("itbl")) {
                 request.campaignId = Integer.parseInt(mapper.writeValueAsString(((Map)payload.get("itbl")).get("campaignId")));
                 request.templateId = Integer.parseInt(mapper.writeValueAsString(((Map)payload.get("itbl")).get("templateId")));
+                request.messageId = mapper.writeValueAsString(((Map)payload.get("itbl")).get("messageId"));
                 request.createdAt = (int) (event.getTimestamp() / 1000.0);
                 Response<IterableApiResponse> response = iterableService.trackPushOpen(request).execute();
                 if (response.isSuccess() && !response.body().isSuccess()) {

@@ -79,6 +79,7 @@ public class IterableServiceTest {
         pushOpenRequest.email = TEST_EMAIL;
         pushOpenRequest.userId = TEST_USER_ID;
         pushOpenRequest.campaignId = 17703; //this correlates to the "Test Campaign" set up in Iterable
+	pushOpenRequest.messageId= "eac02374a90d46a2901cea2f52edbd70"; // This needs to be a valid messageId in the project you're testing.
         Map<String, String> attributes = new HashMap<String, String>();
         attributes.put("test push open attribute key", "test push open attribute value");
         pushOpenRequest.dataFields = attributes;
