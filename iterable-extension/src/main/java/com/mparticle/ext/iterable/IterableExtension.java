@@ -326,7 +326,7 @@ public class IterableExtension extends MessageProcessor {
 
     @Override
     public ModuleRegistrationResponse processRegistrationRequest(ModuleRegistrationRequest request) {
-        ModuleRegistrationResponse response = new ModuleRegistrationResponse(NAME, "1.3.0");
+        ModuleRegistrationResponse response = new ModuleRegistrationResponse(NAME, "1.3.1");
 
         Permissions permissions = new Permissions();
         permissions.setUserIdentities(
