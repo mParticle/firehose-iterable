@@ -204,7 +204,7 @@ public class IterableExtensionTest {
     }
 
     @org.junit.Test
-    public void testProcessPushMessageReceiptEvent() throws Exception {
+    public void testProcessAndroidPushMessageReceiptEvent() throws Exception {
         IterableExtension extension = new IterableExtension();
         extension.iterableService = Mockito.mock(IterableService.class);
         Call callMock = Mockito.mock(Call.class);
@@ -231,9 +231,68 @@ public class IterableExtensionTest {
         userIdentities.add(new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest@mparticle.com"));
         userIdentities.add(new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "123456"));
         eventProcessingRequest.setUserIdentities(userIdentities);
+        eventProcessingRequest.setRuntimeEnvironment(new AndroidRuntimeEnvironment());
+        event.setContext(new Event.Context(eventProcessingRequest));
+        event.setPayload("{\"google.sent_time\":1507657706679,\"body\":\"example\",\"from\":\"674988899928\",\"itbl\":\"{\\\"campaignId\\\":12345,\\\"isGhostPush\\\":false,\\\"messageId\\\":\\\"1dce4e505b11111ca1111d6fdd774fbd\\\",\\\"templateId\\\":54321}\",\"google.message_id\":\"0:1507657706689231%62399b94f9fd7ecd\"}");
+
+        long timeStamp = System.currentTimeMillis();
+        event.setTimestamp(timeStamp);
+
+        extension.processPushMessageReceiptEvent(event);
+
+        ArgumentCaptor<TrackPushOpenRequest> argument = ArgumentCaptor.forClass(TrackPushOpenRequest.class);
+        Mockito.verify(extension.iterableService).trackPushOpen(argument.capture());
+        assertEquals("mptest@mparticle.com", argument.getValue().email);
+        assertEquals("123456", argument.getValue().userId);
+        assertEquals(12345, argument.getValue().campaignId + 0);
+        assertEquals(54321, argument.getValue().templateId + 0);
+        assertEquals("\"1dce4e505b11111ca1111d6fdd774fbd\"", argument.getValue().messageId);
+
+
+        apiResponse.code = "anything but success";
+
+        IOException exception2 = null;
+        try {
+            extension.processPushMessageReceiptEvent(event);
+        } catch (IOException ioe) {
+            exception2 = ioe;
+        }
+        assertNotNull("Iterable extension should have thrown an IOException", exception2);
+
+    }
+
+    @org.junit.Test
+    public void testProcessiOSPushMessageReceiptEvent() throws Exception {
+        IterableExtension extension = new IterableExtension();
+        extension.iterableService = Mockito.mock(IterableService.class);
+        Call callMock = Mockito.mock(Call.class);
+        Mockito.when(extension.iterableService.trackPushOpen(Mockito.any()))
+                .thenReturn(callMock);
+        IterableApiResponse apiResponse = new IterableApiResponse();
+        apiResponse.code = IterableApiResponse.SUCCESS_MESSAGE;
+        Response<IterableApiResponse> response = Response.success(apiResponse);
+        Mockito.when(callMock.execute()).thenReturn(response);
+        EventProcessingRequest eventProcessingRequest = new EventProcessingRequest();
+        eventProcessingRequest.setUserIdentities(new LinkedList<>());
+        PushMessageReceiptEvent event = new PushMessageReceiptEvent();
+        event.setContext(new Event.Context(eventProcessingRequest));
+        IOException exception = null;
+        event.setPayload("anything to get past null check");
+        try {
+            extension.processPushMessageReceiptEvent(event);
+        } catch (IOException ioe) {
+            exception = ioe;
+        }
+        assertNotNull("Iterable should have thrown an exception due to missing email/customerid", exception);
+
+        List<UserIdentity> userIdentities = new LinkedList<>();
+        userIdentities.add(new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest@mparticle.com"));
+        userIdentities.add(new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "123456"));
+        eventProcessingRequest.setUserIdentities(userIdentities);
+        eventProcessingRequest.setRuntimeEnvironment(new IosRuntimeEnvironment());
         event.setContext(new Event.Context(eventProcessingRequest));
 
-        event.setPayload("{\"itbl\":{\"campaignId\":12345, \"templateId\":54321, \"messageId\":\"1dce4e505b11111ca1111d6fdd774fbd\"}}");
+        event.setPayload("{\"aps\":{\"content-available\":1 }, \"data\":{\"route\":\"example\", \"tag\":\"example\", \"body\":\"example\"}, \"route\":\"example\", \"type\":\"marketing\", \"itbl\":{\"campaignId\":12345, \"messageId\":\"1dce4e505b11111ca1111d6fdd774fbd\", \"templateId\":54321, \"isGhostPush\":false } }");
 
         long timeStamp = System.currentTimeMillis();
         event.setTimestamp(timeStamp);
