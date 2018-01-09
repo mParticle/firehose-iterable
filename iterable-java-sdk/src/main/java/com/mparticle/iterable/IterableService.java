@@ -48,6 +48,9 @@ public interface IterableService {
     @POST("api/commerce/trackPurchase")
     Call<IterableApiResponse> trackPurchase(@Body TrackPurchaseRequest purchaseRequest);
 
+    @POST("api/users/updateSubscriptions")
+    Call<IterableApiResponse> updateSubscriptions(@Body UserUpdateRequest userUpdateRequest);
+
     /**
      * At the moment this is only used for unit testing the list subscribe/unsubscribe API calls
      */

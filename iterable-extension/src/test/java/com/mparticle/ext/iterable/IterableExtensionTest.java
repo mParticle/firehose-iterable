@@ -608,4 +608,100 @@ public class IterableExtensionTest {
         String email = IterableExtension.getPlaceholderEmail(request);
         assertEquals("foo-aid@placeholder.email", email);
     }
+
+    @org.junit.Test
+    public void testUnsubscribeEvent() throws Exception {
+        IterableExtension extension = new IterableExtension();
+        extension.iterableService = Mockito.mock(IterableService.class);
+        Call callMock = Mockito.mock(Call.class);
+        Mockito.when(extension.iterableService.updateSubscriptions(Mockito.any()))
+                .thenReturn(callMock);
+        IterableApiResponse apiResponse = new IterableApiResponse();
+        apiResponse.code = IterableApiResponse.SUCCESS_MESSAGE;
+        Response<IterableApiResponse> response = Response.success(apiResponse);
+        Mockito.when(callMock.execute()).thenReturn(response);
+
+        long timeStamp = System.currentTimeMillis();
+        CustomEvent event = new CustomEvent();
+        event.setTimestamp(timeStamp);
+        event.setName("Unsubscribe");
+        EventProcessingRequest request = new EventProcessingRequest();
+        List<UserIdentity> userIdentities = new LinkedList<>();
+        userIdentities.add(new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest@mparticle.com"));
+        userIdentities.add(new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "123456"));
+        request.setUserIdentities(userIdentities);
+        Event.Context context = new Event.Context(request);
+        event.setContext(context);
+        Map<String, String> attributes = new HashMap<>();
+        attributes.put("unsubscribeMessageTypeIdList", "1,2,3,4");
+        event.setAttributes(attributes);
+        List<Integer> expectedMessageTypeIdList = Arrays.asList(1, 2, 3, 4);
+
+        extension.processCustomEvent(event);
+
+        ArgumentCaptor<UserUpdateRequest> argument = ArgumentCaptor.forClass(UserUpdateRequest.class);
+        Mockito.verify(extension.iterableService).updateSubscriptions(argument.capture());
+        assertEquals("mptest@mparticle.com", argument.getValue().email);
+        assertEquals("123456", argument.getValue().userId);
+        assertEquals(expectedMessageTypeIdList, argument.getValue().dataFields.get("unsubscribeMessageTypeIdList"));
+
+        apiResponse.code = "anything but success";
+
+        IOException exception = null;
+        try {
+            extension.processCustomEvent(event);
+        } catch (IOException ioe) {
+            exception = ioe;
+        }
+        assertNotNull("Iterable extension should have thrown an IOException", exception);
+    }
+
+    @org.junit.Test
+    public void testSubscribeEvent() throws Exception {
+        IterableExtension extension = new IterableExtension();
+        extension.iterableService = Mockito.mock(IterableService.class);
+        Call callMock = Mockito.mock(Call.class);
+        Mockito.when(extension.iterableService.updateSubscriptions(Mockito.any()))
+                .thenReturn(callMock);
+        IterableApiResponse apiResponse = new IterableApiResponse();
+        apiResponse.code = IterableApiResponse.SUCCESS_MESSAGE;
+        Response<IterableApiResponse> response = Response.success(apiResponse);
+        Mockito.when(callMock.execute()).thenReturn(response);
+
+        long timeStamp = System.currentTimeMillis();
+        CustomEvent event = new CustomEvent();
+        event.setTimestamp(timeStamp);
+        event.setName("Subscribe");
+        EventProcessingRequest request = new EventProcessingRequest();
+        List<UserIdentity> userIdentities = new LinkedList<>();
+        userIdentities.add(new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest@mparticle.com"));
+        userIdentities.add(new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "123456"));
+        request.setUserIdentities(userIdentities);
+        Event.Context context = new Event.Context(request);
+        event.setContext(context);
+        Map<String, String> attributes = new HashMap<>();
+        // Added some random spaces to test it doesn't mess with parsing
+        attributes.put("allMessageTypeIdList", "1, 2,  3, 4 , 5 , 6 , 7  ,8");
+        attributes.put("subscribeMessageTypeIdList", " 1, 3, 5   ,7 ");
+        event.setAttributes(attributes);
+        List<Integer> expectedMessageTypeIdList = Arrays.asList(2, 4, 6, 8);
+
+        extension.processCustomEvent(event);
+
+        ArgumentCaptor<UserUpdateRequest> argument = ArgumentCaptor.forClass(UserUpdateRequest.class);
+        Mockito.verify(extension.iterableService).updateSubscriptions(argument.capture());
+        assertEquals("mptest@mparticle.com", argument.getValue().email);
+        assertEquals("123456", argument.getValue().userId);
+        assertEquals(expectedMessageTypeIdList, argument.getValue().dataFields.get("unsubscribeMessageTypeIdList"));
+
+        apiResponse.code = "anything but success";
+
+        IOException exception = null;
+        try {
+            extension.processCustomEvent(event);
+        } catch (IOException ioe) {
+            exception = ioe;
+        }
+        assertNotNull("Iterable extension should have thrown an IOException", exception);
+    }
 }
