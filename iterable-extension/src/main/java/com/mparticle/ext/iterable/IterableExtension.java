@@ -24,6 +24,13 @@ public class IterableExtension extends MessageProcessor {
     public static final String SETTING_APNS_KEY = "apnsProdIntegrationName";
     public static final String SETTING_APNS_SANDBOX_KEY = "apnsSandboxIntegrationName";
     public static final String SETTING_LIST_ID = "listId";
+
+    public static final String SUBSCRIBE_CUSTOM_EVENT_NAME = "Subscribe";
+    public static final String UNSUBSCRIBE_CUSTOM_EVENT_NAME = "Unsubscribe";
+    public static final String SUBSCRIBE_MESSAGE_TYPE_ID_LIST_KEY = "subscribeMessageTypeIdList";
+    public static final String UNSUBSCRIBE_MESSAGE_TYPE_ID_LIST_KEY = "unsubscribeMessageTypeIdList";
+    public static final String ALL_MESSAGE_TYPE_ID_LIST_KEY = "allMessageTypeIdList";
+
     IterableService iterableService;
 
     @Override
@@ -185,7 +192,7 @@ public class IterableExtension extends MessageProcessor {
                 }
             }
             if (!isEmpty(userUpdateRequest.email) || !isEmpty(userUpdateRequest.userId)) {
-                userUpdateRequest.dataFields = context.getUserAttributes();
+                userUpdateRequest.dataFields = context.getUserAttributes() == null ? null : new HashMap<String,Object>(context.getUserAttributes());
                 Response<IterableApiResponse> response = iterableService.userUpdate(getApiKey(request), userUpdateRequest).execute();
                 if (response.isSuccessful()) {
                     IterableApiResponse apiResponse = response.body();
@@ -217,7 +224,7 @@ public class IterableExtension extends MessageProcessor {
                     }
                 }
             }
-            apiUser.dataFields = event.getContext().getUserAttributes();
+
             purchaseRequest.user = apiUser;
             purchaseRequest.total = event.getTotalAmount();
             if (event.getProducts() != null) {
@@ -364,7 +371,8 @@ public class IterableExtension extends MessageProcessor {
                 .setSupportedRuntimeEnvironments(
                         Arrays.asList(
                                 RuntimeEnvironment.Type.ANDROID,
-                                RuntimeEnvironment.Type.IOS)
+                                RuntimeEnvironment.Type.IOS,
+                                RuntimeEnvironment.Type.MOBILEWEB)
                 );
 
         List<Setting> eventSettings = new ArrayList<>();
@@ -419,9 +427,97 @@ public class IterableExtension extends MessageProcessor {
         return response;
     }
 
+    private HashSet<Integer> convertToIntHashset(String csv){
+        HashSet<Integer> hashSet = new HashSet<Integer>();  // Or a more realistic size
+        StringTokenizer st = new StringTokenizer(csv, ",");
+        while(st.hasMoreTokens())
+            hashSet.add(Integer.parseInt(st.nextToken().trim()));
+        return hashSet;
+    }
+
+    private void processUnsubscribeEvent(CustomEvent event) throws IOException {
+        Map<String, String> eventAttributes = event.getAttributes();
+        if (eventAttributes.containsKey(UNSUBSCRIBE_MESSAGE_TYPE_ID_LIST_KEY)) {
+            String subMessageTypeIdStr = eventAttributes.get(UNSUBSCRIBE_MESSAGE_TYPE_ID_LIST_KEY);
+            HashSet<Integer> unsubMessageTypeIdList = convertToIntHashset(subMessageTypeIdStr);
+            if (!unsubMessageTypeIdList.isEmpty()) {
+                UserUpdateRequest userUpdateRequest = new UserUpdateRequest();
+                List<UserIdentity> identities = event.getContext().getUserIdentities();
+                if (identities != null) {
+                    for (UserIdentity identity : identities) {
+                            if (identity.getType().equals(UserIdentity.Type.EMAIL)) {
+                                userUpdateRequest.email = identity.getValue();
+                            } else if (identity.getType().equals(UserIdentity.Type.CUSTOMER)) {
+                                userUpdateRequest.userId = identity.getValue();
+                            }
+                        }
+                }
+                userUpdateRequest.dataFields = new HashMap<String, Object>();
+                userUpdateRequest.dataFields.put(UNSUBSCRIBE_MESSAGE_TYPE_ID_LIST_KEY, new ArrayList(unsubMessageTypeIdList));
+
+                Response<IterableApiResponse> response = iterableService.updateSubscriptions(getApiKey(event), userUpdateRequest).execute();
+                if (response.isSuccessful() && !response.body().isSuccess()) {
+                    throw new IOException(response.body().toString());
+                } else if (!response.isSuccessful()) {
+                    throw new IOException("Error sending unsubscribe event to Iterable: HTTP " + response.code());
+                }
+            }
+        }
+    }
+
+    private void processSubscribeEvent(CustomEvent event) throws IOException {
+        Map<String, String> eventAttributes = event.getAttributes();
+        if (eventAttributes.containsKey(ALL_MESSAGE_TYPE_ID_LIST_KEY) && eventAttributes.containsKey(SUBSCRIBE_MESSAGE_TYPE_ID_LIST_KEY)) {
+            String subMessageTypeIdStr = eventAttributes.get(SUBSCRIBE_MESSAGE_TYPE_ID_LIST_KEY);
+            String allMessageTypeIdStr = eventAttributes.get(ALL_MESSAGE_TYPE_ID_LIST_KEY);
+            HashSet<Integer> subMessageTypeIdList = convertToIntHashset(subMessageTypeIdStr);
+            HashSet<Integer> allMessageTypeIdList = convertToIntHashset(allMessageTypeIdStr);
+
+            if (!subMessageTypeIdList.isEmpty() && !allMessageTypeIdList.isEmpty()) {
+                UserUpdateRequest userUpdateRequest = new UserUpdateRequest();
+                List<UserIdentity> identities = event.getContext().getUserIdentities();
+                if (identities != null) {
+                    for (UserIdentity identity : identities) {
+                        if (identity.getType().equals(UserIdentity.Type.EMAIL)) {
+                            userUpdateRequest.email = identity.getValue();
+                        } else if (identity.getType().equals(UserIdentity.Type.CUSTOMER)) {
+                            userUpdateRequest.userId = identity.getValue();
+                        }
+                    }
+                }
+
+                // We can only provide Iterable a list of unsubscribed message type ids so we take the difference between all message type ids and the subscribed message type ids.
+                allMessageTypeIdList.removeAll(subMessageTypeIdList);
+                userUpdateRequest.dataFields = new HashMap<String, Object>();
+                userUpdateRequest.dataFields.put(UNSUBSCRIBE_MESSAGE_TYPE_ID_LIST_KEY, new ArrayList(allMessageTypeIdList));
+
+                Response<IterableApiResponse> response = iterableService.updateSubscriptions(getApiKey(event), userUpdateRequest).execute();
+                if (response.isSuccessful() && !response.body().isSuccess()) {
+                    throw new IOException(response.body().toString());
+                } else if (!response.isSuccessful()) {
+                    throw new IOException("Error sending subscribe event to Iterable: HTTP " + response.code());
+                }
+            }
+        }
+    }
+
     @Override
     public void processCustomEvent(CustomEvent event) throws IOException {
-        TrackRequest request = new TrackRequest(event.getName());
+        String eventName = event.getName();
+        switch (eventName){
+            case SUBSCRIBE_CUSTOM_EVENT_NAME:
+                processSubscribeEvent(event);
+                return;
+
+            case UNSUBSCRIBE_CUSTOM_EVENT_NAME:
+                processUnsubscribeEvent(event);
+                return;
+
+            default:
+                break;
+        }
+
+        TrackRequest request = new TrackRequest(eventName);
         request.createdAt = (int) (event.getTimestamp() / 1000.0);
         request.dataFields = attemptTypeConversion(event.getAttributes());
         List<UserIdentity> identities = event.getContext().getUserIdentities();
@@ -546,7 +642,6 @@ public class IterableExtension extends MessageProcessor {
                         ApiUser user = new ApiUser();
                         user.email = email;
                         user.userId = userId;
-                        user.dataFields = profile.getUserAttributes();
                         if (!additions.containsKey(listId)) {
                             additions.put(listId, new LinkedList<>());
                         }
