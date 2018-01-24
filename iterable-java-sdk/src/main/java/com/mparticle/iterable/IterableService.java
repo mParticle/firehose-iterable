@@ -12,6 +12,7 @@ import retrofit.http.GET;
 import retrofit.http.POST;
 
 import java.io.IOException;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Iterable API defined here:
@@ -58,6 +59,8 @@ public interface IterableService {
         //all of this intercepter/chain stuff is just so callers don't
         //have to pass the API key into every single method/api call
         OkHttpClient client = new OkHttpClient();
+        client.setReadTimeout(500, TimeUnit.MILLISECONDS);
+        client.setConnectTimeout(500, TimeUnit.MILLISECONDS);
         client.interceptors().add(
                 chain -> chain.proceed(chain.request().newBuilder().url(
                                 chain.request()
