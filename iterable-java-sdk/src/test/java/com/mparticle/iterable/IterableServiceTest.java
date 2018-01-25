@@ -95,7 +95,7 @@ public class IterableServiceTest {
         userUpdateRequest.email = TEST_EMAIL;
         Map<String, String> attributes = new HashMap<String, String>();
         attributes.put("test attribute key", "test attribute value");
-        userUpdateRequest.dataFields = attributes;
+        userUpdateRequest.dataFields = new HashMap<String, Object>(attributes);
         Response<IterableApiResponse> response = iterableService.userUpdate(userUpdateRequest).execute();
         assertTrue("Retrofit request not successful:\nMessage: " + response.message() + "\nCode: " + response.code(), response.isSuccess());
         assertTrue("Iterable response was not successful:\n" + response.body().toString(), response.body().isSuccess());
