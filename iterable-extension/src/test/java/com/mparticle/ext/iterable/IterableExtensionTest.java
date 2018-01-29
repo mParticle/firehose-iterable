@@ -12,13 +12,14 @@ import com.mparticle.sdk.model.registration.UserIdentityPermission;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
-import retrofit.Call;
-import retrofit.Response;
+import retrofit2.Call;
+import retrofit2.Response;
 
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.*;
 
+import static com.mparticle.ext.iterable.IterableExtension.SETTING_API_KEY;
 import static org.junit.Assert.*;
 
 public class IterableExtensionTest {
@@ -46,7 +47,7 @@ public class IterableExtensionTest {
         request.setEvents(events);
         Account account = new Account();
         HashMap<String, String> settings = new HashMap<String, String>();
-        settings.put(IterableExtension.SETTING_API_KEY, "cool api key");
+        settings.put(SETTING_API_KEY, "cool api key");
         account.setAccountSettings(settings);
         request.setAccount(account);
         extension.processEventProcessingRequest(request);
@@ -63,25 +64,29 @@ public class IterableExtensionTest {
         IterableExtension extension = new IterableExtension();
         extension.iterableService = Mockito.mock(IterableService.class);
         Call callMock = Mockito.mock(Call.class);
-        Mockito.when(extension.iterableService.userUpdate(Mockito.any()))
+        Mockito.when(extension.iterableService.userUpdate(Mockito.any(), Mockito.any()))
                 .thenReturn(callMock);
         IterableApiResponse apiResponse = new IterableApiResponse();
         apiResponse.code = IterableApiResponse.SUCCESS_MESSAGE;
         Response<IterableApiResponse> response = Response.success(apiResponse);
         Mockito.when(callMock.execute()).thenReturn(response);
         EventProcessingRequest request = new EventProcessingRequest();
-
+        Account account = new Account();
+        Map<String, String> settings = new HashMap<>();
+        settings.put(SETTING_API_KEY, "foo api key");
+        account.setAccountSettings(settings);
+        request.setAccount(account);
         //no user identities, no API call
         extension.updateUser(request);
         UserUpdateRequest userUpdateRequest = new UserUpdateRequest();
-        Mockito.verify(extension.iterableService, Mockito.never()).userUpdate(userUpdateRequest);
+        Mockito.verify(extension.iterableService, Mockito.never()).userUpdate("foo api key", userUpdateRequest);
 
         //user identities but no email/userid, no API call
         List<UserIdentity> identities = new LinkedList<>();
         identities.add(new UserIdentity(UserIdentity.Type.FACEBOOK, Identity.Encoding.RAW, "123456"));
         request.setUserIdentities(identities);
         extension.updateUser(request);
-        Mockito.verify(extension.iterableService, Mockito.never()).userUpdate(userUpdateRequest);
+        Mockito.verify(extension.iterableService, Mockito.never()).userUpdate("foo api key", userUpdateRequest);
 
         //ok, now we should get a single API call
         identities.add(new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest@mparticle.com"));
@@ -94,7 +99,9 @@ public class IterableExtensionTest {
         extension.updateUser(request);
 
         ArgumentCaptor<UserUpdateRequest> argument = ArgumentCaptor.forClass(UserUpdateRequest.class);
-        Mockito.verify(extension.iterableService).userUpdate(argument.capture());
+        ArgumentCaptor<String> apiArg = ArgumentCaptor.forClass(String.class);
+        Mockito.verify(extension.iterableService).userUpdate(apiArg.capture(), argument.capture());
+        assertEquals("foo api key", apiArg.getValue());
         assertEquals("mptest@mparticle.com", argument.getValue().email);
         assertEquals("123456", argument.getValue().userId);
         assertEquals(argument.getValue().dataFields.get("some attribute key"), "some attribute value");
@@ -117,7 +124,7 @@ public class IterableExtensionTest {
         IterableExtension extension = new IterableExtension();
         extension.iterableService = Mockito.mock(IterableService.class);
         extension.processUserAttributeChangeEvent(new UserAttributeChangeEvent());
-        Mockito.verify(extension.iterableService, Mockito.never()).userUpdate(Mockito.any());
+        Mockito.verify(extension.iterableService, Mockito.never()).userUpdate(Mockito.any(), Mockito.any());
     }
 
     /**
@@ -160,7 +167,7 @@ public class IterableExtensionTest {
         IterableExtension extension = new IterableExtension();
         extension.iterableService = Mockito.mock(IterableService.class);
         Call callMock = Mockito.mock(Call.class);
-        Mockito.when(extension.iterableService.track(Mockito.any()))
+        Mockito.when(extension.iterableService.track(Mockito.any(), Mockito.any()))
                 .thenReturn(callMock);
         IterableApiResponse apiResponse = new IterableApiResponse();
         apiResponse.code = IterableApiResponse.SUCCESS_MESSAGE;
@@ -172,6 +179,11 @@ public class IterableExtensionTest {
         event.setTimestamp(timeStamp);
         event.setName("My Event Name");
         EventProcessingRequest request = new EventProcessingRequest();
+        Account account = new Account();
+        Map<String, String> settings = new HashMap<>();
+        settings.put(SETTING_API_KEY, "foo");
+        account.setAccountSettings(settings);
+        request.setAccount(account);
         List<UserIdentity> userIdentities = new LinkedList<>();
         userIdentities.add(new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest@mparticle.com"));
         userIdentities.add(new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "123456"));
@@ -185,7 +197,7 @@ public class IterableExtensionTest {
         extension.processCustomEvent(event);
 
         ArgumentCaptor<TrackRequest> argument = ArgumentCaptor.forClass(TrackRequest.class);
-        Mockito.verify(extension.iterableService).track(argument.capture());
+        Mockito.verify(extension.iterableService).track(Mockito.any(), argument.capture());
         assertEquals("My Event Name", argument.getValue().getEventName());
         assertEquals("mptest@mparticle.com", argument.getValue().email);
         assertEquals("123456", argument.getValue().userId);
@@ -208,13 +220,18 @@ public class IterableExtensionTest {
         IterableExtension extension = new IterableExtension();
         extension.iterableService = Mockito.mock(IterableService.class);
         Call callMock = Mockito.mock(Call.class);
-        Mockito.when(extension.iterableService.trackPushOpen(Mockito.any()))
+        Mockito.when(extension.iterableService.trackPushOpen(Mockito.any(), Mockito.any()))
                 .thenReturn(callMock);
         IterableApiResponse apiResponse = new IterableApiResponse();
         apiResponse.code = IterableApiResponse.SUCCESS_MESSAGE;
         Response<IterableApiResponse> response = Response.success(apiResponse);
         Mockito.when(callMock.execute()).thenReturn(response);
         EventProcessingRequest eventProcessingRequest = new EventProcessingRequest();
+        Account account = new Account();
+        Map<String, String> settings = new HashMap<>();
+        settings.put(SETTING_API_KEY, "foo");
+        account.setAccountSettings(settings);
+        eventProcessingRequest.setAccount(account);
         eventProcessingRequest.setUserIdentities(new LinkedList<>());
         PushMessageReceiptEvent event = new PushMessageReceiptEvent();
         event.setContext(new Event.Context(eventProcessingRequest));
@@ -241,7 +258,7 @@ public class IterableExtensionTest {
         extension.processPushMessageReceiptEvent(event);
 
         ArgumentCaptor<TrackPushOpenRequest> argument = ArgumentCaptor.forClass(TrackPushOpenRequest.class);
-        Mockito.verify(extension.iterableService).trackPushOpen(argument.capture());
+        Mockito.verify(extension.iterableService).trackPushOpen(Mockito.any(), argument.capture());
         assertEquals("mptest@mparticle.com", argument.getValue().email);
         assertEquals("123456", argument.getValue().userId);
         assertEquals(12345, argument.getValue().campaignId + 0);
@@ -266,7 +283,7 @@ public class IterableExtensionTest {
         IterableExtension extension = new IterableExtension();
         extension.iterableService = Mockito.mock(IterableService.class);
         Call callMock = Mockito.mock(Call.class);
-        Mockito.when(extension.iterableService.trackPushOpen(Mockito.any()))
+        Mockito.when(extension.iterableService.trackPushOpen(Mockito.any(), Mockito.any()))
                 .thenReturn(callMock);
         IterableApiResponse apiResponse = new IterableApiResponse();
         apiResponse.code = IterableApiResponse.SUCCESS_MESSAGE;
@@ -275,6 +292,11 @@ public class IterableExtensionTest {
         EventProcessingRequest eventProcessingRequest = new EventProcessingRequest();
         eventProcessingRequest.setUserIdentities(new LinkedList<>());
         PushMessageReceiptEvent event = new PushMessageReceiptEvent();
+        Account account = new Account();
+        Map<String, String> settings = new HashMap<>();
+        settings.put(SETTING_API_KEY, "foo");
+        account.setAccountSettings(settings);
+        eventProcessingRequest.setAccount(account);
         event.setContext(new Event.Context(eventProcessingRequest));
         IOException exception = null;
         event.setPayload("anything to get past null check");
@@ -300,7 +322,7 @@ public class IterableExtensionTest {
         extension.processPushMessageReceiptEvent(event);
 
         ArgumentCaptor<TrackPushOpenRequest> argument = ArgumentCaptor.forClass(TrackPushOpenRequest.class);
-        Mockito.verify(extension.iterableService).trackPushOpen(argument.capture());
+        Mockito.verify(extension.iterableService).trackPushOpen(Mockito.any(), argument.capture());
         assertEquals("mptest@mparticle.com", argument.getValue().email);
         assertEquals("123456", argument.getValue().userId);
         assertEquals(12345, argument.getValue().campaignId + 0);
@@ -332,8 +354,9 @@ public class IterableExtensionTest {
     public void testProcessAudienceMembershipChangeRequest() throws Exception {
         IterableExtension extension = new IterableExtension();
         IterableService service = Mockito.mock(IterableService.class);
+        extension.iterableService = service;
         Call callMock = Mockito.mock(Call.class);
-        Mockito.when(service.trackPushOpen(Mockito.any()))
+        Mockito.when(service.trackPushOpen(Mockito.any(), Mockito.any()))
                 .thenReturn(callMock);
         IterableApiResponse apiResponse = new IterableApiResponse();
         apiResponse.code = IterableApiResponse.SUCCESS_MESSAGE;
@@ -384,15 +407,18 @@ public class IterableExtensionTest {
         AudienceMembershipChangeRequest request = new AudienceMembershipChangeRequest();
         Account account = new Account();
         Map<String, String> settings = new HashMap<>();
-        settings.put(IterableExtension.SETTING_API_KEY, "some api key");
+        settings.put(SETTING_API_KEY, "some api key");
         account.setAccountSettings(settings);
         request.setAccount(account);
         request.setUserProfiles(profiles);
 
-        extension.processAudienceMembershipChangeRequest(request, service);
+        extension.processAudienceMembershipChangeRequest(request);
 
         ArgumentCaptor<SubscribeRequest> argument = ArgumentCaptor.forClass(SubscribeRequest.class);
-        Mockito.verify(service, Mockito.times(3)).listSubscribe(argument.capture());
+        ArgumentCaptor<String> apiArgument = ArgumentCaptor.forClass(String.class);
+        Mockito.verify(service, Mockito.times(3)).listSubscribe(apiArgument.capture(), argument.capture());
+        String apiKey = apiArgument.getValue();
+        assertEquals("some api key", apiKey);
         List<SubscribeRequest> subscribeRequests = argument.getAllValues();
         int i = 0;
         for (SubscribeRequest subscribeRequest : subscribeRequests) {
@@ -414,7 +440,7 @@ public class IterableExtensionTest {
         assertEquals(3, i);
 
         ArgumentCaptor<UnsubscribeRequest> unsubArg = ArgumentCaptor.forClass(UnsubscribeRequest.class);
-        Mockito.verify(service, Mockito.times(3)).listUnsubscribe(unsubArg.capture());
+        Mockito.verify(service, Mockito.times(3)).listUnsubscribe(Mockito.any(), unsubArg.capture());
         List<UnsubscribeRequest> unsubscribeRequests = unsubArg.getAllValues();
         i = 0;
         for (UnsubscribeRequest unsubscribeRequest : unsubscribeRequests) {
@@ -461,7 +487,7 @@ public class IterableExtensionTest {
         IterableExtension extension = new IterableExtension();
         extension.iterableService = Mockito.mock(IterableService.class);
         Call callMock = Mockito.mock(Call.class);
-        Mockito.when(extension.iterableService.trackPurchase(Mockito.any()))
+        Mockito.when(extension.iterableService.trackPurchase(Mockito.any(), Mockito.any()))
                 .thenReturn(callMock);
         IterableApiResponse apiResponse = new IterableApiResponse();
         apiResponse.code = IterableApiResponse.SUCCESS_MESSAGE;
@@ -472,6 +498,11 @@ public class IterableExtensionTest {
         event.setTimestamp(timeStamp);
 
         EventProcessingRequest request = new EventProcessingRequest();
+        Account account = new Account();
+        Map<String, String> settings = new HashMap<>();
+        settings.put(SETTING_API_KEY, "foo");
+        account.setAccountSettings(settings);
+        request.setAccount(account);
         List<UserIdentity> userIdentities = new LinkedList<>();
         userIdentities.add(new UserIdentity(UserIdentity.Type.EMAIL, Identity.Encoding.RAW, "mptest@mparticle.com"));
         userIdentities.add(new UserIdentity(UserIdentity.Type.CUSTOMER, Identity.Encoding.RAW, "123456"));
@@ -499,7 +530,7 @@ public class IterableExtensionTest {
         event.setAction(ProductActionEvent.Action.PURCHASE);
         extension.processProductActionEvent(event);
         ArgumentCaptor<TrackPurchaseRequest> purchaseArgs = ArgumentCaptor.forClass(TrackPurchaseRequest.class);
-        Mockito.verify(extension.iterableService, Mockito.times(1)).trackPurchase(purchaseArgs.capture());
+        Mockito.verify(extension.iterableService, Mockito.times(1)).trackPurchase(Mockito.any(), purchaseArgs.capture());
         TrackPurchaseRequest trackPurchaseRequest = purchaseArgs.getValue();
         assertEquals(trackPurchaseRequest.user.email, "mptest@mparticle.com");
         assertEquals(trackPurchaseRequest.user.userId, "123456");

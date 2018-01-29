@@ -1,15 +1,16 @@
 package com.mparticle.iterable;
 
-import com.squareup.okhttp.HttpUrl;
-import com.squareup.okhttp.Interceptor;
-import com.squareup.okhttp.OkHttpClient;
-import com.squareup.okhttp.Response;
-import retrofit.Call;
-import retrofit.GsonConverterFactory;
-import retrofit.Retrofit;
-import retrofit.http.Body;
-import retrofit.http.GET;
-import retrofit.http.POST;
+
+
+import okhttp3.HttpUrl;
+import okhttp3.OkHttpClient;
+import retrofit2.Call;
+import retrofit2.Retrofit;
+import retrofit2.converter.gson.GsonConverterFactory;
+import retrofit2.http.Body;
+import retrofit2.http.GET;
+import retrofit2.http.POST;
+import retrofit2.http.Query;
 
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
@@ -24,30 +25,31 @@ public interface IterableService {
 
     String HOST = "api.iterable.com";
     String PARAM_API_KEY = "api_key";
+    long SERVICE_TIMEOUT_MILLIS = 300;
 
     @POST("api/events/track")
-    Call<IterableApiResponse> track(@Body TrackRequest trackRequest);
+    Call<IterableApiResponse> track(@Query(IterableService.PARAM_API_KEY) String apiKey, @Body TrackRequest trackRequest);
 
     @POST("api/events/trackPushOpen")
-    Call<IterableApiResponse> trackPushOpen(@Body TrackPushOpenRequest registerRequest);
+    Call<IterableApiResponse> trackPushOpen(@Query(IterableService.PARAM_API_KEY) String apiKey, @Body TrackPushOpenRequest registerRequest);
 
     @POST("api/users/update")
-    Call<IterableApiResponse> userUpdate(@Body UserUpdateRequest trackRequest);
+    Call<IterableApiResponse> userUpdate(@Query(IterableService.PARAM_API_KEY) String apiKey, @Body UserUpdateRequest trackRequest);
 
     @POST("api/users/updateEmail")
-    Call<IterableApiResponse> updateEmail(@Body UpdateEmailRequest updateEmailRequest);
+    Call<IterableApiResponse> updateEmail(@Query(IterableService.PARAM_API_KEY) String apiKey, @Body UpdateEmailRequest updateEmailRequest);
 
     @POST("api/users/registerDeviceToken")
-    Call<IterableApiResponse> registerToken(@Body RegisterDeviceTokenRequest registerRequest);
+    Call<IterableApiResponse> registerToken(@Query(IterableService.PARAM_API_KEY) String apiKey, @Body RegisterDeviceTokenRequest registerRequest);
 
     @POST("api/lists/subscribe")
-    Call<ListResponse> listSubscribe(@Body SubscribeRequest subscribeRequest);
+    Call<ListResponse> listSubscribe(@Query(IterableService.PARAM_API_KEY) String apiKey, @Body SubscribeRequest subscribeRequest);
 
     @POST("api/lists/unsubscribe")
-    Call<ListResponse> listUnsubscribe(@Body UnsubscribeRequest unsubscribeRequest);
+    Call<ListResponse> listUnsubscribe(@Query(IterableService.PARAM_API_KEY) String apiKey, @Body UnsubscribeRequest unsubscribeRequest);
 
     @POST("api/commerce/trackPurchase")
-    Call<IterableApiResponse> trackPurchase(@Body TrackPurchaseRequest purchaseRequest);
+    Call<IterableApiResponse> trackPurchase(@Query(IterableService.PARAM_API_KEY) String apiKey, @Body TrackPurchaseRequest purchaseRequest);
 
     /**
      * At the moment this is only used for unit testing the list subscribe/unsubscribe API calls
@@ -55,32 +57,20 @@ public interface IterableService {
     @GET("api/lists")
     Call<GetListResponse> lists();
 
-    static IterableService newInstance(String apiKey) {
-        //all of this intercepter/chain stuff is just so callers don't
-        //have to pass the API key into every single method/api call
-        OkHttpClient client = new OkHttpClient();
-        client.setReadTimeout(500, TimeUnit.MILLISECONDS);
-        client.setConnectTimeout(500, TimeUnit.MILLISECONDS);
-        client.interceptors().add(
-                chain -> chain.proceed(chain.request().newBuilder().url(
-                                chain.request()
-                                .httpUrl()
-                                .newBuilder()
-                                .addQueryParameter(IterableService.PARAM_API_KEY, apiKey)
-                                .build()
-                ).build()
-        ));
-        HttpUrl url = new HttpUrl.Builder()
+    static IterableService newInstance() {
+        final OkHttpClient client = new OkHttpClient.Builder()
+                .connectTimeout(SERVICE_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+                .readTimeout(SERVICE_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)
+                .build();
+        final HttpUrl url = new HttpUrl.Builder()
                 .scheme("https")
                 .host(IterableService.HOST)
-                .addQueryParameter(IterableService.PARAM_API_KEY, apiKey)
                 .build();
-        Retrofit retrofit = new Retrofit.Builder()
+        final Retrofit retrofit = new Retrofit.Builder()
                 .baseUrl(url)
                 .client(client)
                 .addConverterFactory(GsonConverterFactory.create())
                 .build();
         return retrofit.create(IterableService.class);
     }
-
 }
