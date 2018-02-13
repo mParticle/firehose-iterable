@@ -24,13 +24,6 @@ public class IterableExtension extends MessageProcessor {
     public static final String SETTING_APNS_KEY = "apnsProdIntegrationName";
     public static final String SETTING_APNS_SANDBOX_KEY = "apnsSandboxIntegrationName";
     public static final String SETTING_LIST_ID = "listId";
-
-    public static final String SUBSCRIBE_CUSTOM_EVENT_NAME = "Subscribe";
-    public static final String UNSUBSCRIBE_CUSTOM_EVENT_NAME = "Unsubscribe";
-    public static final String SUBSCRIBE_MESSAGE_TYPE_ID_LIST_KEY = "subscribeMessageTypeIdList";
-    public static final String UNSUBSCRIBE_MESSAGE_TYPE_ID_LIST_KEY = "unsubscribeMessageTypeIdList";
-    public static final String ALL_MESSAGE_TYPE_ID_LIST_KEY = "allMessageTypeIdList";
-
     IterableService iterableService;
 
     @Override
@@ -192,7 +185,7 @@ public class IterableExtension extends MessageProcessor {
                 }
             }
             if (!isEmpty(userUpdateRequest.email) || !isEmpty(userUpdateRequest.userId)) {
-                userUpdateRequest.dataFields = context.getUserAttributes() == null ? null : new HashMap<String,Object>(context.getUserAttributes());
+                userUpdateRequest.dataFields = context.getUserAttributes();
                 Response<IterableApiResponse> response = iterableService.userUpdate(getApiKey(request), userUpdateRequest).execute();
                 if (response.isSuccessful()) {
                     IterableApiResponse apiResponse = response.body();
@@ -224,7 +217,7 @@ public class IterableExtension extends MessageProcessor {
                     }
                 }
             }
-
+            apiUser.dataFields = event.getContext().getUserAttributes();
             purchaseRequest.user = apiUser;
             purchaseRequest.total = event.getTotalAmount();
             if (event.getProducts() != null) {
@@ -365,6 +358,8 @@ public class IterableExtension extends MessageProcessor {
                 )
         );
         permissions.setAllowAccessDeviceApplicationStamp(true);
+        permissions.setAllowUserAttributes(true);
+        permissions.setAllowDeviceInformation(true);
         response.setPermissions(permissions);
         response.setDescription("<a href=\"https://www.iterable.com\">Iterable</a> makes consumer growth marketing and user engagement simple. With Iterable, marketers send the right message, to the right device, at the right time.");
         EventProcessingRegistration eventProcessingRegistration = new EventProcessingRegistration()
@@ -408,7 +403,6 @@ public class IterableExtension extends MessageProcessor {
                 Event.Type.CUSTOM_EVENT,
                 Event.Type.PUSH_SUBSCRIPTION,
                 Event.Type.PUSH_MESSAGE_RECEIPT,
-                Event.Type.USER_ATTRIBUTE_CHANGE,
                 Event.Type.USER_IDENTITY_CHANGE,
                 Event.Type.PRODUCT_ACTION);
 
@@ -427,97 +421,104 @@ public class IterableExtension extends MessageProcessor {
         return response;
     }
 
-    private HashSet<Integer> convertToIntHashset(String csv){
-        HashSet<Integer> hashSet = new HashSet<Integer>();  // Or a more realistic size
+    private static List<Integer> convertToIntList(String csv){
+        if (csv == null) {
+            return null;
+        } else if (csv.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        List<Integer> list = new ArrayList<>();
         StringTokenizer st = new StringTokenizer(csv, ",");
-        while(st.hasMoreTokens())
-            hashSet.add(Integer.parseInt(st.nextToken().trim()));
-        return hashSet;
+        while (st.hasMoreTokens()) {
+            list.add(Integer.parseInt(st.nextToken().trim()));
+        }
+        return list;
     }
 
-    private void processUnsubscribeEvent(CustomEvent event) throws IOException {
-        Map<String, String> eventAttributes = event.getAttributes();
-        if (eventAttributes.containsKey(UNSUBSCRIBE_MESSAGE_TYPE_ID_LIST_KEY)) {
-            String subMessageTypeIdStr = eventAttributes.get(UNSUBSCRIBE_MESSAGE_TYPE_ID_LIST_KEY);
-            HashSet<Integer> unsubMessageTypeIdList = convertToIntHashset(subMessageTypeIdStr);
-            if (!unsubMessageTypeIdList.isEmpty()) {
-                UserUpdateRequest userUpdateRequest = new UserUpdateRequest();
-                List<UserIdentity> identities = event.getContext().getUserIdentities();
-                if (identities != null) {
-                    for (UserIdentity identity : identities) {
-                            if (identity.getType().equals(UserIdentity.Type.EMAIL)) {
-                                userUpdateRequest.email = identity.getValue();
-                            } else if (identity.getType().equals(UserIdentity.Type.CUSTOMER)) {
-                                userUpdateRequest.userId = identity.getValue();
-                            }
-                        }
-                }
-                userUpdateRequest.dataFields = new HashMap<String, Object>();
-                userUpdateRequest.dataFields.put(UNSUBSCRIBE_MESSAGE_TYPE_ID_LIST_KEY, new ArrayList(unsubMessageTypeIdList));
+    public static final String UPDATE_SUBSCRIPTIONS_CUSTOM_EVENT_NAME = "subscriptionsUpdated";
+    public static final String EMAIL_LIST_ID_LIST_KEY = "emailListIds";
+    public static final String UNSUBSCRIBE_CHANNEL_ID_LIST_KEY = "unsubscribedChannelIds";
+    public static final String UNSUBSCRIBE_MESSAGE_TYPE_ID_LIST_KEY = "unsubscribedMessageTypeIds";
+    public static final String CAMPAIGN_ID_KEY = "campaignId";
+    public static final String TEMPLATE_ID_KEY = "templateId";
 
-                Response<IterableApiResponse> response = iterableService.updateSubscriptions(getApiKey(event), userUpdateRequest).execute();
-                if (response.isSuccessful() && !response.body().isSuccess()) {
-                    throw new IOException(response.body().toString());
-                } else if (!response.isSuccessful()) {
-                    throw new IOException("Error sending unsubscribe event to Iterable: HTTP " + response.code());
+    /**
+     *
+     * This is expected to be called with an event that conforms to the following:
+     * Name: "updateSubscriptions"
+     *
+     * And has at least some of the following:
+     *
+     * Attribute: emailListIds
+     * Attribute: unsubscribedChannelIds
+     * Attribute: unsubscribedMessageTypeIds
+     * Attribute: campaignId
+     * Attribute: templateId
+     *
+     */
+    private boolean processSubscribeEvent(CustomEvent event) throws IOException {
+        UpdateSubscriptionsRequest updateRequest = generateSubscriptionRequest(event);
+        if (updateRequest == null) {
+            return false;
+        }
+        Response<IterableApiResponse> response = iterableService.updateSubscriptions(getApiKey(event), updateRequest).execute();
+        if (response.isSuccessful() && !response.body().isSuccess()) {
+            throw new IOException(response.body().toString());
+        } else if (!response.isSuccessful()) {
+            throw new IOException("Error sending update subscriptions event to Iterable: HTTP " + response.code());
+        }
+        return true;
+
+    }
+
+    static UpdateSubscriptionsRequest generateSubscriptionRequest(CustomEvent event) {
+        if (!UPDATE_SUBSCRIPTIONS_CUSTOM_EVENT_NAME.equalsIgnoreCase(event.getName())) {
+            return null;
+        }
+        UpdateSubscriptionsRequest updateRequest = new UpdateSubscriptionsRequest();
+
+        Map<String, String> eventAttributes = event.getAttributes();
+        updateRequest.emailListIds = convertToIntList(eventAttributes.get(EMAIL_LIST_ID_LIST_KEY));
+        updateRequest.unsubscribedChannelIds = convertToIntList(eventAttributes.get(UNSUBSCRIBE_CHANNEL_ID_LIST_KEY));
+        updateRequest.unsubscribedMessageTypeIds = convertToIntList(eventAttributes.get(UNSUBSCRIBE_MESSAGE_TYPE_ID_LIST_KEY));
+
+        String campaignId = eventAttributes.get(CAMPAIGN_ID_KEY);
+        if (!isEmpty(campaignId)) {
+            try {
+                updateRequest.campaignId = Integer.parseInt(campaignId.trim());
+            }catch (NumberFormatException ignored) {
+
+            }
+        }
+
+        String templateId = eventAttributes.get(TEMPLATE_ID_KEY);
+        if (!isEmpty(templateId)) {
+            try {
+                updateRequest.templateId = Integer.parseInt(templateId.trim());
+            }catch (NumberFormatException ignored) {
+
+            }
+        }
+
+        List<UserIdentity> identities = event.getContext().getUserIdentities();
+        if (identities != null) {
+            for (UserIdentity identity : identities) {
+                if (identity.getType().equals(UserIdentity.Type.EMAIL)) {
+                    updateRequest.email = identity.getValue();
                 }
             }
         }
-    }
-
-    private void processSubscribeEvent(CustomEvent event) throws IOException {
-        Map<String, String> eventAttributes = event.getAttributes();
-        if (eventAttributes.containsKey(ALL_MESSAGE_TYPE_ID_LIST_KEY) && eventAttributes.containsKey(SUBSCRIBE_MESSAGE_TYPE_ID_LIST_KEY)) {
-            String subMessageTypeIdStr = eventAttributes.get(SUBSCRIBE_MESSAGE_TYPE_ID_LIST_KEY);
-            String allMessageTypeIdStr = eventAttributes.get(ALL_MESSAGE_TYPE_ID_LIST_KEY);
-            HashSet<Integer> subMessageTypeIdList = convertToIntHashset(subMessageTypeIdStr);
-            HashSet<Integer> allMessageTypeIdList = convertToIntHashset(allMessageTypeIdStr);
-
-            if (!subMessageTypeIdList.isEmpty() && !allMessageTypeIdList.isEmpty()) {
-                UserUpdateRequest userUpdateRequest = new UserUpdateRequest();
-                List<UserIdentity> identities = event.getContext().getUserIdentities();
-                if (identities != null) {
-                    for (UserIdentity identity : identities) {
-                        if (identity.getType().equals(UserIdentity.Type.EMAIL)) {
-                            userUpdateRequest.email = identity.getValue();
-                        } else if (identity.getType().equals(UserIdentity.Type.CUSTOMER)) {
-                            userUpdateRequest.userId = identity.getValue();
-                        }
-                    }
-                }
-
-                // We can only provide Iterable a list of unsubscribed message type ids so we take the difference between all message type ids and the subscribed message type ids.
-                allMessageTypeIdList.removeAll(subMessageTypeIdList);
-                userUpdateRequest.dataFields = new HashMap<String, Object>();
-                userUpdateRequest.dataFields.put(UNSUBSCRIBE_MESSAGE_TYPE_ID_LIST_KEY, new ArrayList(allMessageTypeIdList));
-
-                Response<IterableApiResponse> response = iterableService.updateSubscriptions(getApiKey(event), userUpdateRequest).execute();
-                if (response.isSuccessful() && !response.body().isSuccess()) {
-                    throw new IOException(response.body().toString());
-                } else if (!response.isSuccessful()) {
-                    throw new IOException("Error sending subscribe event to Iterable: HTTP " + response.code());
-                }
-            }
-        }
+        return updateRequest;
     }
 
     @Override
     public void processCustomEvent(CustomEvent event) throws IOException {
-        String eventName = event.getName();
-        switch (eventName){
-            case SUBSCRIBE_CUSTOM_EVENT_NAME:
-                processSubscribeEvent(event);
-                return;
-
-            case UNSUBSCRIBE_CUSTOM_EVENT_NAME:
-                processUnsubscribeEvent(event);
-                return;
-
-            default:
-                break;
+        if (processSubscribeEvent(event)) {
+            return;
         }
 
-        TrackRequest request = new TrackRequest(eventName);
+        TrackRequest request = new TrackRequest(event.getName());
         request.createdAt = (int) (event.getTimestamp() / 1000.0);
         request.dataFields = attemptTypeConversion(event.getAttributes());
         List<UserIdentity> identities = event.getContext().getUserIdentities();
@@ -530,9 +531,6 @@ public class IterableExtension extends MessageProcessor {
                 }
             }
         }
-        //TODO use custom flags to set campaign and template id
-        //request.campaignId = event.getCustomFlags()....
-        //request.templateId = event.getCustomFlags()....
 
         Response<IterableApiResponse> response = iterableService.track(getApiKey(event), request).execute();
         if (response.isSuccessful() && !response.body().isSuccess()) {

@@ -12,7 +12,6 @@ import retrofit2.http.GET;
 import retrofit2.http.POST;
 import retrofit2.http.Query;
 
-import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -25,7 +24,7 @@ public interface IterableService {
 
     String HOST = "api.iterable.com";
     String PARAM_API_KEY = "api_key";
-    long SERVICE_TIMEOUT_MILLIS = 300;
+    long SERVICE_TIMEOUT_MILLIS = 500;
 
     @POST("api/events/track")
     Call<IterableApiResponse> track(@Query(IterableService.PARAM_API_KEY) String apiKey, @Body TrackRequest trackRequest);
@@ -52,7 +51,7 @@ public interface IterableService {
     Call<IterableApiResponse> trackPurchase(@Query(IterableService.PARAM_API_KEY) String apiKey, @Body TrackPurchaseRequest purchaseRequest);
 
     @POST("api/users/updateSubscriptions")
-    Call<IterableApiResponse> updateSubscriptions(@Query(IterableService.PARAM_API_KEY) String apiKey, @Body UserUpdateRequest userUpdateRequest);
+    Call<IterableApiResponse> updateSubscriptions(@Query(IterableService.PARAM_API_KEY) String apiKey, @Body UpdateSubscriptionsRequest userUpdateRequest);
 
     /**
      * At the moment this is only used for unit testing the list subscribe/unsubscribe API calls
