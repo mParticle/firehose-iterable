@@ -358,13 +358,16 @@ public class IterableExtension extends MessageProcessor {
                 )
         );
         permissions.setAllowAccessDeviceApplicationStamp(true);
+        permissions.setAllowUserAttributes(true);
+        permissions.setAllowDeviceInformation(true);
         response.setPermissions(permissions);
         response.setDescription("<a href=\"https://www.iterable.com\">Iterable</a> makes consumer growth marketing and user engagement simple. With Iterable, marketers send the right message, to the right device, at the right time.");
         EventProcessingRegistration eventProcessingRegistration = new EventProcessingRegistration()
                 .setSupportedRuntimeEnvironments(
                         Arrays.asList(
                                 RuntimeEnvironment.Type.ANDROID,
-                                RuntimeEnvironment.Type.IOS)
+                                RuntimeEnvironment.Type.IOS,
+                                RuntimeEnvironment.Type.MOBILEWEB)
                 );
 
         List<Setting> eventSettings = new ArrayList<>();
@@ -400,7 +403,6 @@ public class IterableExtension extends MessageProcessor {
                 Event.Type.CUSTOM_EVENT,
                 Event.Type.PUSH_SUBSCRIPTION,
                 Event.Type.PUSH_MESSAGE_RECEIPT,
-                Event.Type.USER_ATTRIBUTE_CHANGE,
                 Event.Type.USER_IDENTITY_CHANGE,
                 Event.Type.PRODUCT_ACTION);
 
@@ -419,8 +421,103 @@ public class IterableExtension extends MessageProcessor {
         return response;
     }
 
+    private static List<Integer> convertToIntList(String csv){
+        if (csv == null) {
+            return null;
+        } else if (csv.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        List<Integer> list = new ArrayList<>();
+        StringTokenizer st = new StringTokenizer(csv, ",");
+        while (st.hasMoreTokens()) {
+            list.add(Integer.parseInt(st.nextToken().trim()));
+        }
+        return list;
+    }
+
+    public static final String UPDATE_SUBSCRIPTIONS_CUSTOM_EVENT_NAME = "subscriptionsUpdated";
+    public static final String EMAIL_LIST_ID_LIST_KEY = "emailListIds";
+    public static final String UNSUBSCRIBE_CHANNEL_ID_LIST_KEY = "unsubscribedChannelIds";
+    public static final String UNSUBSCRIBE_MESSAGE_TYPE_ID_LIST_KEY = "unsubscribedMessageTypeIds";
+    public static final String CAMPAIGN_ID_KEY = "campaignId";
+    public static final String TEMPLATE_ID_KEY = "templateId";
+
+    /**
+     *
+     * This is expected to be called with an event that conforms to the following:
+     * Name: "updateSubscriptions"
+     *
+     * And has at least some of the following:
+     *
+     * Attribute: emailListIds
+     * Attribute: unsubscribedChannelIds
+     * Attribute: unsubscribedMessageTypeIds
+     * Attribute: campaignId
+     * Attribute: templateId
+     *
+     */
+    private boolean processSubscribeEvent(CustomEvent event) throws IOException {
+        UpdateSubscriptionsRequest updateRequest = generateSubscriptionRequest(event);
+        if (updateRequest == null) {
+            return false;
+        }
+        Response<IterableApiResponse> response = iterableService.updateSubscriptions(getApiKey(event), updateRequest).execute();
+        if (response.isSuccessful() && !response.body().isSuccess()) {
+            throw new IOException(response.body().toString());
+        } else if (!response.isSuccessful()) {
+            throw new IOException("Error sending update subscriptions event to Iterable: HTTP " + response.code());
+        }
+        return true;
+
+    }
+
+    static UpdateSubscriptionsRequest generateSubscriptionRequest(CustomEvent event) {
+        if (!UPDATE_SUBSCRIPTIONS_CUSTOM_EVENT_NAME.equalsIgnoreCase(event.getName())) {
+            return null;
+        }
+        UpdateSubscriptionsRequest updateRequest = new UpdateSubscriptionsRequest();
+
+        Map<String, String> eventAttributes = event.getAttributes();
+        updateRequest.emailListIds = convertToIntList(eventAttributes.get(EMAIL_LIST_ID_LIST_KEY));
+        updateRequest.unsubscribedChannelIds = convertToIntList(eventAttributes.get(UNSUBSCRIBE_CHANNEL_ID_LIST_KEY));
+        updateRequest.unsubscribedMessageTypeIds = convertToIntList(eventAttributes.get(UNSUBSCRIBE_MESSAGE_TYPE_ID_LIST_KEY));
+
+        String campaignId = eventAttributes.get(CAMPAIGN_ID_KEY);
+        if (!isEmpty(campaignId)) {
+            try {
+                updateRequest.campaignId = Integer.parseInt(campaignId.trim());
+            }catch (NumberFormatException ignored) {
+
+            }
+        }
+
+        String templateId = eventAttributes.get(TEMPLATE_ID_KEY);
+        if (!isEmpty(templateId)) {
+            try {
+                updateRequest.templateId = Integer.parseInt(templateId.trim());
+            }catch (NumberFormatException ignored) {
+
+            }
+        }
+
+        List<UserIdentity> identities = event.getContext().getUserIdentities();
+        if (identities != null) {
+            for (UserIdentity identity : identities) {
+                if (identity.getType().equals(UserIdentity.Type.EMAIL)) {
+                    updateRequest.email = identity.getValue();
+                }
+            }
+        }
+        return updateRequest;
+    }
+
     @Override
     public void processCustomEvent(CustomEvent event) throws IOException {
+        if (processSubscribeEvent(event)) {
+            return;
+        }
+
         TrackRequest request = new TrackRequest(event.getName());
         request.createdAt = (int) (event.getTimestamp() / 1000.0);
         request.dataFields = attemptTypeConversion(event.getAttributes());
@@ -434,9 +531,6 @@ public class IterableExtension extends MessageProcessor {
                 }
             }
         }
-        //TODO use custom flags to set campaign and template id
-        //request.campaignId = event.getCustomFlags()....
-        //request.templateId = event.getCustomFlags()....
 
         Response<IterableApiResponse> response = iterableService.track(getApiKey(event), request).execute();
         if (response.isSuccessful() && !response.body().isSuccess()) {
@@ -546,7 +640,6 @@ public class IterableExtension extends MessageProcessor {
                         ApiUser user = new ApiUser();
                         user.email = email;
                         user.userId = userId;
-                        user.dataFields = profile.getUserAttributes();
                         if (!additions.containsKey(listId)) {
                             additions.put(listId, new LinkedList<>());
                         }
