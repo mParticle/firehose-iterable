@@ -37,7 +37,56 @@ public class IterableExtension extends MessageProcessor {
         );
         insertPlaceholderEmail(request);
         updateUser(request);
+        processPushOpens(request);
         return super.processEventProcessingRequest(request);
+    }
+
+    private void processPushOpens(EventProcessingRequest processingRequest) throws IOException {
+        if (processingRequest.getEvents() != null) {
+            List<PushMessageOpenEvent> pushOpenEvents = processingRequest.getEvents().stream()
+                    .filter(e -> e.getType() == Event.Type.PUSH_MESSAGE_OPEN)
+                    .map(e -> (PushMessageOpenEvent) e)
+                    .collect(Collectors.toList());
+
+            for (PushMessageOpenEvent event : pushOpenEvents) {
+                TrackPushOpenRequest request = new TrackPushOpenRequest();
+                List<UserIdentity> identities = event.getContext().getUserIdentities();
+                if (event.getPayload() != null && event.getContext().getUserIdentities() != null) {
+                    for (UserIdentity identity : identities) {
+                        if (identity.getType().equals(UserIdentity.Type.EMAIL)) {
+                            request.email = identity.getValue();
+                        } else if (identity.getType().equals(UserIdentity.Type.CUSTOMER)) {
+                            request.userId = identity.getValue();
+                        }
+                    }
+                    if (request.email == null && request.userId == null) {
+                        throw new IOException("Unable to process PushMessageOpenEvent - user has no email or customer id.");
+                    }
+                    ObjectMapper mapper = new ObjectMapper();
+                    Map<String, Object> payload = mapper.readValue(event.getPayload(), Map.class);
+                    if (payload.containsKey("itbl")) {
+                        //Android and iOS have differently encoded payload formats. See the tests for examples.
+                        if (event.getContext().getRuntimeEnvironment() instanceof AndroidRuntimeEnvironment) {
+                            Map<String, Object> iterableMap = mapper.readValue((String) payload.get("itbl"), Map.class);
+                            request.campaignId = Integer.parseInt(mapper.writeValueAsString(iterableMap.get("campaignId")));
+                            request.templateId = Integer.parseInt(mapper.writeValueAsString(iterableMap.get("templateId")));
+                            request.messageId = mapper.writeValueAsString(iterableMap.get("messageId"));
+                        } else {
+                            request.campaignId = Integer.parseInt(mapper.writeValueAsString(((Map) payload.get("itbl")).get("campaignId")));
+                            request.templateId = Integer.parseInt(mapper.writeValueAsString(((Map) payload.get("itbl")).get("templateId")));
+                            request.messageId = mapper.writeValueAsString(((Map) payload.get("itbl")).get("messageId"));
+                        }
+                        request.createdAt = (int) (event.getTimestamp() / 1000.0);
+                        Response<IterableApiResponse> response = iterableService.trackPushOpen(getApiKey(event), request).execute();
+                        if (response.isSuccessful() && !response.body().isSuccess()) {
+                            throw new IOException(response.body().toString());
+                        } else if (!response.isSuccessful()) {
+                            throw new IOException("Error sending push-open to Iterable: HTTP " + response.code());
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private static String getApiKey(Event event) {
@@ -353,7 +402,6 @@ public class IterableExtension extends MessageProcessor {
                         new DeviceIdentityPermission(DeviceIdentity.Type.APPLE_PUSH_NOTIFICATION_TOKEN, Identity.Encoding.RAW),
                         new DeviceIdentityPermission(DeviceIdentity.Type.IOS_VENDOR_ID, Identity.Encoding.RAW),
                         new DeviceIdentityPermission(DeviceIdentity.Type.ANDROID_ID, Identity.Encoding.RAW),
-                        new DeviceIdentityPermission(DeviceIdentity.Type.IOS_ADVERTISING_ID, Identity.Encoding.RAW),
                         new DeviceIdentityPermission(DeviceIdentity.Type.GOOGLE_ADVERTISING_ID, Identity.Encoding.RAW)
                 )
         );
@@ -403,6 +451,7 @@ public class IterableExtension extends MessageProcessor {
                 Event.Type.CUSTOM_EVENT,
                 Event.Type.PUSH_SUBSCRIPTION,
                 Event.Type.PUSH_MESSAGE_RECEIPT,
+                Event.Type.PUSH_MESSAGE_OPEN,
                 Event.Type.USER_IDENTITY_CHANGE,
                 Event.Type.PRODUCT_ACTION);
 
@@ -577,7 +626,6 @@ public class IterableExtension extends MessageProcessor {
         });
         return converted;
     }
-
 
     @Override
     public void processPushMessageReceiptEvent(PushMessageReceiptEvent event) throws IOException {
