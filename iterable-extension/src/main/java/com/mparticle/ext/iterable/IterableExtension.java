@@ -43,6 +43,7 @@ public class IterableExtension extends MessageProcessor {
 
     private void processPushOpens(EventProcessingRequest processingRequest) throws IOException {
         if (processingRequest.getEvents() != null) {
+            Event.Context context = new Event.Context(processingRequest);
             List<PushMessageOpenEvent> pushOpenEvents = processingRequest.getEvents().stream()
                     .filter(e -> e.getType() == Event.Type.PUSH_MESSAGE_OPEN)
                     .map(e -> (PushMessageOpenEvent) e)
@@ -50,8 +51,8 @@ public class IterableExtension extends MessageProcessor {
 
             for (PushMessageOpenEvent event : pushOpenEvents) {
                 TrackPushOpenRequest request = new TrackPushOpenRequest();
-                List<UserIdentity> identities = event.getContext().getUserIdentities();
-                if (event.getPayload() != null && event.getContext().getUserIdentities() != null) {
+                List<UserIdentity> identities = context.getUserIdentities();
+                if (event.getPayload() != null && context.getUserIdentities() != null) {
                     for (UserIdentity identity : identities) {
                         if (identity.getType().equals(UserIdentity.Type.EMAIL)) {
                             request.email = identity.getValue();
@@ -66,7 +67,7 @@ public class IterableExtension extends MessageProcessor {
                     Map<String, Object> payload = mapper.readValue(event.getPayload(), Map.class);
                     if (payload.containsKey("itbl")) {
                         //Android and iOS have differently encoded payload formats. See the tests for examples.
-                        if (event.getContext().getRuntimeEnvironment() instanceof AndroidRuntimeEnvironment) {
+                        if (context.getRuntimeEnvironment() instanceof AndroidRuntimeEnvironment) {
                             Map<String, Object> iterableMap = mapper.readValue((String) payload.get("itbl"), Map.class);
                             request.campaignId = Integer.parseInt(mapper.writeValueAsString(iterableMap.get("campaignId")));
                             request.templateId = Integer.parseInt(mapper.writeValueAsString(iterableMap.get("templateId")));
@@ -77,7 +78,7 @@ public class IterableExtension extends MessageProcessor {
                             request.messageId = mapper.writeValueAsString(((Map) payload.get("itbl")).get("messageId"));
                         }
                         request.createdAt = (int) (event.getTimestamp() / 1000.0);
-                        Response<IterableApiResponse> response = iterableService.trackPushOpen(getApiKey(event), request).execute();
+                        Response<IterableApiResponse> response = iterableService.trackPushOpen(getApiKey(processingRequest), request).execute();
                         if (response.isSuccessful() && !response.body().isSuccess()) {
                             throw new IOException(response.body().toString());
                         } else if (!response.isSuccessful()) {
