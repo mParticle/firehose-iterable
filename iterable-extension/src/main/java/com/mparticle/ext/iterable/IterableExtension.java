@@ -352,7 +352,8 @@ public class IterableExtension extends MessageProcessor {
                 .setSupportedRuntimeEnvironments(
                         Arrays.asList(
                                 RuntimeEnvironment.Type.ANDROID,
-                                RuntimeEnvironment.Type.IOS)
+                                RuntimeEnvironment.Type.IOS,
+                                RuntimeEnvironment.Type.UNKNOWN)
                 );
 
         List<Setting> eventSettings = new ArrayList<>();
