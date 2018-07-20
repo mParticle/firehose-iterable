@@ -13,11 +13,11 @@ import java.io.OutputStream;
 
 public class IterableLambdaEndpoint implements RequestStreamHandler {
 
-    MessageSerializer serializer = new MessageSerializer();
+    static MessageSerializer serializer = new MessageSerializer();
+    static IterableExtension processor = new IterableExtension();
 
     @Override
     public void handleRequest(InputStream input, OutputStream output, Context context) throws IOException {
-        IterableExtension processor = new IterableExtension();
         Message request = serializer.deserialize(input, Message.class);
         Message response = processor.processMessage(request);
         serializer.serialize(output, response);

@@ -1,14 +1,13 @@
 package com.mparticle.iterable;
 
 import org.junit.Before;
+import org.junit.Test;
 import org.mockito.Mockito;
-import retrofit.Call;
-import retrofit.Response;
+import retrofit2.Call;
+import retrofit2.Response;
 
 import java.math.BigDecimal;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.Map;
+import java.util.*;
 
 import static org.junit.Assert.assertTrue;
 
@@ -23,26 +22,28 @@ public class IterableServiceTest {
 
     private static final String TEST_EMAIL = "testing@mparticle.com";
     private static final String TEST_USER_ID = "123456";
+    private static final String ITERABLE_API_KEY = ""; //put your API key here
 
     private IterableService iterableService;
 
     @Before
     public void setUp() throws Exception {
-        String iterableApiKey = ""; //put your API key here
 
-        if (iterableApiKey == null || iterableApiKey.length() == 0) {
+        if (ITERABLE_API_KEY == null || ITERABLE_API_KEY.length() == 0) {
             iterableService = Mockito.mock(IterableService.class);
 
             Call callMock = Mockito.mock(Call.class);
-            Mockito.when(iterableService.userUpdate(Mockito.any()))
+            Mockito.when(iterableService.userUpdate(Mockito.any(), Mockito.any()))
                     .thenReturn(callMock);
-            Mockito.when(iterableService.track(Mockito.any()))
+            Mockito.when(iterableService.track(Mockito.any(),Mockito.any()))
                     .thenReturn(callMock);
-            Mockito.when(iterableService.registerToken(Mockito.any()))
+            Mockito.when(iterableService.registerToken(Mockito.any(), Mockito.any()))
                     .thenReturn(callMock);
-            Mockito.when(iterableService.trackPushOpen(Mockito.any()))
+            Mockito.when(iterableService.trackPushOpen(Mockito.any(), Mockito.any()))
                     .thenReturn(callMock);
-            Mockito.when(iterableService.trackPurchase(Mockito.any()))
+            Mockito.when(iterableService.trackPurchase(Mockito.any(), Mockito.any()))
+                    .thenReturn(callMock);
+            Mockito.when(iterableService.updateSubscriptions(Mockito.any(), Mockito.any()))
                     .thenReturn(callMock);
             IterableApiResponse apiResponse = new IterableApiResponse();
             apiResponse.code = IterableApiResponse.SUCCESS_MESSAGE;
@@ -54,12 +55,12 @@ public class IterableServiceTest {
             successlistResponse.successCount = 1;
             Response<ListResponse> listResponse = Response.success(successlistResponse);
             Mockito.when(listCallMock.execute()).thenReturn(listResponse);
-            Mockito.when(iterableService.listSubscribe(Mockito.any()))
+            Mockito.when(iterableService.listSubscribe(Mockito.any(), Mockito.any()))
                     .thenReturn(listCallMock);
-            Mockito.when(iterableService.listUnsubscribe(Mockito.any()))
+            Mockito.when(iterableService.listUnsubscribe(Mockito.any(), Mockito.any()))
                     .thenReturn(listCallMock);
         } else {
-            iterableService = IterableService.newInstance(iterableApiKey);
+            iterableService = IterableService.newInstance();
         }
     }
 
@@ -68,8 +69,8 @@ public class IterableServiceTest {
         TrackRequest trackRequest = new TrackRequest("Test Event");
         trackRequest.email = TEST_EMAIL;
         trackRequest.userId = TEST_USER_ID;
-        Response<IterableApiResponse> response = iterableService.track(trackRequest).execute();
-        assertTrue("Retrofit request not successful:\nMessage: " + response.message() + "\nCode: " + response.code(), response.isSuccess());
+        Response<IterableApiResponse> response = iterableService.track(ITERABLE_API_KEY, trackRequest).execute();
+        assertTrue("Retrofit request not successful:\nMessage: " + response.message() + "\nCode: " + response.code(), response.isSuccessful());
         assertTrue("Iterable response was not successful:\n" + response.body().toString(), response.body().isSuccess());
     }
 
@@ -83,8 +84,8 @@ public class IterableServiceTest {
         Map<String, String> attributes = new HashMap<String, String>();
         attributes.put("test push open attribute key", "test push open attribute value");
         pushOpenRequest.dataFields = attributes;
-        Response<IterableApiResponse> response = iterableService.trackPushOpen(pushOpenRequest).execute();
-        assertTrue("Retrofit request not successful:\nMessage: " + response.message() + "\nCode: " + response.code(), response.isSuccess());
+        Response<IterableApiResponse> response = iterableService.trackPushOpen(ITERABLE_API_KEY, pushOpenRequest).execute();
+        assertTrue("Retrofit request not successful:\nMessage: " + response.message() + "\nCode: " + response.code(), response.isSuccessful());
         assertTrue("Iterable response was not successful:\n" + response.body().toString(), response.body().isSuccess());
     }
 
@@ -95,9 +96,10 @@ public class IterableServiceTest {
         userUpdateRequest.email = TEST_EMAIL;
         Map<String, String> attributes = new HashMap<String, String>();
         attributes.put("test attribute key", "test attribute value");
+
         userUpdateRequest.dataFields = attributes;
-        Response<IterableApiResponse> response = iterableService.userUpdate(userUpdateRequest).execute();
-        assertTrue("Retrofit request not successful:\nMessage: " + response.message() + "\nCode: " + response.code(), response.isSuccess());
+        Response<IterableApiResponse> response = iterableService.userUpdate(ITERABLE_API_KEY, userUpdateRequest).execute();
+        assertTrue("Retrofit request not successful:\nMessage: " + response.message() + "\nCode: " + response.code(), response.isSuccessful());
         assertTrue("Iterable response was not successful:\n" + response.body().toString(), response.body().isSuccess());
     }
 
@@ -107,17 +109,17 @@ public class IterableServiceTest {
         registerRequest.email = TEST_EMAIL;
         registerRequest.device = new Device();
         registerRequest.device.platform = Device.PLATFORM_GCM;
-        registerRequest.device.applicationName = "mparticletestintegration";
+        registerRequest.device.applicationName = "test";
         registerRequest.device.token = "thisisatestGCMtoken";
-        Response<IterableApiResponse> response = iterableService.registerToken(registerRequest).execute();
-        assertTrue("Retrofit request not successful:\nMessage: " + response.message() + "\nCode: " + response.code(), response.isSuccess());
+        Response<IterableApiResponse> response = iterableService.registerToken(ITERABLE_API_KEY, registerRequest).execute();
+        assertTrue("Retrofit request not successful:\nMessage: " + response.message() + "\nCode: " + response.code(), response.isSuccessful());
         assertTrue("Iterable response was not successful:\n" + response.body().toString(), response.body().isSuccess());
     }
 
     @org.junit.Test
     public void testListSubscribe() throws Exception {
         SubscribeRequest subscribeRequest = new SubscribeRequest();
-        subscribeRequest.listId = 7110;
+        subscribeRequest.listId = 81935;
         subscribeRequest.subscribers = new LinkedList<>();
 
         String userId1 = System.currentTimeMillis() + "";
@@ -139,21 +141,21 @@ public class IterableServiceTest {
 
         subscribeRequest.subscribers.add(user1);
         subscribeRequest.subscribers.add(user2);
-        Response<ListResponse> response = iterableService.listSubscribe(subscribeRequest).execute();
-        assertTrue("Retrofit request not successful:\nMessage: " + response.message() + "\nCode: " + response.code(), response.isSuccess());
+        Response<ListResponse> response = iterableService.listSubscribe(ITERABLE_API_KEY, subscribeRequest).execute();
+        assertTrue("Retrofit request not successful:\nMessage: " + response.message() + "\nCode: " + response.code(), response.isSuccessful());
         assertTrue("Iterable response was not successful:\nSuccess Count: " + response.body().successCount + "\nFail Count: " + response.body().failCount, response.body().failCount < 1);
     }
 
     @org.junit.Test
     public void testListUnsubscribe() throws Exception {
         UnsubscribeRequest unsubscribeRequest = new UnsubscribeRequest();
-        unsubscribeRequest.listId = 7110;
+        unsubscribeRequest.listId = 81935;
         Unsubscriber user = new Unsubscriber();
         user.email = "newtestsubscriber@mparticle.com";
         unsubscribeRequest.subscribers = new LinkedList<>();
         unsubscribeRequest.subscribers.add(user);
-        Response<ListResponse> response = iterableService.listUnsubscribe(unsubscribeRequest).execute();
-        assertTrue("Retrofit request not successful:\nMessage: " + response.message() + "\nCode: " + response.code(), response.isSuccess());
+        Response<ListResponse> response = iterableService.listUnsubscribe(ITERABLE_API_KEY, unsubscribeRequest).execute();
+        assertTrue("Retrofit request not successful:\nMessage: " + response.message() + "\nCode: " + response.code(), response.isSuccessful());
         //just check for 200 since it's not feasible in an automated test to wait for Iterable to update its lists such an an unsubscribe will always work.
         // assertTrue("Iterable response was not successful:\nSuccess Count: " + response.body().successCount + "\nFail Count: " + response.body().failCount, response.body().failCount < 1);
     }
@@ -174,8 +176,21 @@ public class IterableServiceTest {
         item.name = "test product name";
         request.items.add(item);
         request.total = new BigDecimal(100d);
-        Response<IterableApiResponse> response = iterableService.trackPurchase(request).execute();
-        assertTrue("Retrofit request not successful:\nMessage: " + response.message() + "\nCode: " + response.code(), response.isSuccess());
+        Response<IterableApiResponse> response = iterableService.trackPurchase(ITERABLE_API_KEY, request).execute();
+        assertTrue("Retrofit request not successful:\nMessage: " + response.message() + "\nCode: " + response.code(), response.isSuccessful());
         assertTrue("Iterable response was not successful:\n" + response.body().toString(), response.body().isSuccess());
+    }
+
+    @Test
+    public void testUpdateSubscriptions() throws Exception {
+        UpdateSubscriptionsRequest request = new UpdateSubscriptionsRequest();
+        request.email = TEST_EMAIL;
+        request.unsubscribedChannelIds = Arrays.asList(1,2,3);
+        request.unsubscribedMessageTypeIds = Arrays.asList(1,2,3);
+        request.emailListIds = Arrays.asList(1,2,3);
+        Response<IterableApiResponse> response = iterableService.updateSubscriptions(ITERABLE_API_KEY, request).execute();
+        assertTrue("Retrofit request not successful:\nMessage: " + response.message() + "\nCode: " + response.code(), response.isSuccessful());
+        assertTrue("Iterable response was not successful:\n" + response.body().toString(), response.body().isSuccess());
+
     }
 }
