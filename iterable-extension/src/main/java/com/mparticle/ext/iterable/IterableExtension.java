@@ -416,7 +416,9 @@ public class IterableExtension extends MessageProcessor {
                         Arrays.asList(
                                 RuntimeEnvironment.Type.ANDROID,
                                 RuntimeEnvironment.Type.IOS,
+                                RuntimeEnvironment.Type.UNKNOWN,
                                 RuntimeEnvironment.Type.MOBILEWEB)
+
                 );
 
         List<Setting> eventSettings = new ArrayList<>();
