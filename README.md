@@ -1,3 +1,9 @@
+
+
+
+**Note:** This version of the mParticle - Iterable Firehose Integration is no longer in use. Please refer to the current version, maintained by Iterable <a href="https://github.com/Iterable/mparticle-firehose-iterable">here</a>.
+
+
 # mParticle - Iterable Firehose Integration
 
 This library integrates mParticle with [Iterable](https://www.iterable.com/), using [mParticle's Java SDK](https://github.com/mParticle/mparticle-sdk-java) over Amazon's [Lambda platform](https://aws.amazon.com/lambda/). 
